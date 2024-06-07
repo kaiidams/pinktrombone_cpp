@@ -126,6 +126,7 @@ int main(int argc, char* argv[])
         }
 
         ui.tractUI.draw(renderer);
+        ui.updateTouches();
         SDL_UpdateWindowSurface(window);
     }
 
