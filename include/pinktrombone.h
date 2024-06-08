@@ -52,10 +52,14 @@ Version 2024-06-01
 
 #include <algorithm>
 #include <vector>
+#include <map>
 #include <iostream>
 #include <fstream>
 #include <cmath>
 #include <ctime>
+#ifdef USE_SDL
+#include <SDL.h>
+#endif
 
 namespace pinktrombone
 {
@@ -115,9 +119,13 @@ namespace pinktrombone
             loudness_ = std::pow(UITenseness_, 0.25);
         }
 
+        void isTouched(bool value) { isTouched_ = value; }
         bool isTouched() const { return isTouched_; }
+        void UIFrequency(double value) { UIFrequency_ = value; }
         double UIFrequency() const { return UIFrequency_; }
+        void UITenseness(double value) { UITenseness_ = value; }
         double UITenseness() const { return UITenseness_; }
+        void loudness(double value) { loudness_ = value; }
         double loudness() const { return loudness_; }
 
         double runStep(double lambda, double noiseSource)
@@ -229,6 +237,7 @@ namespace pinktrombone
     public:
         void handleTouches(const std::map<std::string, Touch>& touchesWithMouse)
         {
+#ifdef USE_SDL
             if (!touch_.empty() && !touchesWithMouse.at(touch_).alive) touch_ = "";
 
             if (touch_.empty())
@@ -269,6 +278,7 @@ namespace pinktrombone
                     break;
                 }
             }
+#endif
         }
 
     private:
@@ -302,11 +312,13 @@ namespace pinktrombone
 
         // UI
         std::string touch_;
-        int x_;
-        int y_;
+        int x_ = 0;
+        int y_ = 0;
         const int semitones_ = 20;
         const double baseNote_ = 87.3071; //F
+#ifdef USE_SDL
         const SDL_Rect keyboardRect_{ 20, 240, 600, 100 };
+#endif
     };
 
     class Tract
@@ -658,7 +670,10 @@ namespace pinktrombone
     class AudioSystem
     {
     public:
-        AudioSystem(Glottis& glottis, Tract& tract) : glottis_{ glottis }, tract_{ tract }, started_{ false } {}
+        AudioSystem(Glottis& glottis, Tract& tract) : glottis_{ glottis }, tract_{ tract }, started_{ false }
+        {
+            blockTime_ = static_cast<double>(blockLength_) / sampleRate;
+        }
 
         void process(double lambda, size_t len, double* out)
         {
@@ -755,6 +770,8 @@ namespace pinktrombone
             setRestDiameter();
             tract_.targetDiameter() = tract_.restDiameter();
         }
+
+#ifdef USE_SDL
         double getIndex(int x, int y) const
         {
             return static_cast<double>(tract_.n() * (x - tractRect_.x)) / tractRect_.w;
@@ -770,6 +787,7 @@ namespace pinktrombone
         {
 
         }
+#endif
 
         void setRestDiameter()
         {
@@ -875,6 +893,7 @@ namespace pinktrombone
             }
         }
 
+#ifdef USE_SDL
         void draw(SDL_Renderer* renderer)
         {
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -915,6 +934,7 @@ namespace pinktrombone
 
             SDL_RenderPresent(renderer);
         }
+#endif
 
     private:
         Tract& tract_;
@@ -922,7 +942,9 @@ namespace pinktrombone
         const double outerTongueControlRadius_ = 3.5;
         const double tongueLowerIndexBound_ = tract_.bladeStart() + 2;
         const double tongueUpperIndexBound_ = tract_.tipStart() - 3;
+#ifdef USE_SDL
         SDL_Rect tractRect_{ 20, 20, 600, 200 };
+#endif
         std::string tongueTouch_;
         double tongueIndex_ = (tongueLowerIndexBound_ + tongueUpperIndexBound_) / 2.;
         double tongueDiameter_ = (innerTongueControlRadius_ + outerTongueControlRadius_) / 2.;
@@ -938,6 +960,7 @@ namespace pinktrombone
         {
         }
 
+#ifdef USE_SDL
         void draw(SDL_Renderer* renderer)
         {
         }
@@ -988,6 +1011,7 @@ namespace pinktrombone
             touch.endTime = time;
             handleTouches();
         }
+#endif
 
         void handleTouches()
         {
