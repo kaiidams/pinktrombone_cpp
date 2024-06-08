@@ -13,6 +13,7 @@ static int channels;
 
 void SDLCALL MyAudioCallback(void* userdata, Uint8* stream, int len)
 {
+    // TODO SDL runs on another thread than UI.
     size_t buflen = len / sizeof(float) / channels;
     std::vector<double> buf(buflen);
     ui.audioSystem().process(0.0, buflen, buf.data());

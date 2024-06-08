@@ -114,6 +114,11 @@ namespace pinktrombone
             loudness_ = std::pow(UITenseness_, 0.25);
         }
 
+        bool isTouched() const { return isTouched_; }
+        double UIFrequency() const { return UIFrequency_; }
+        double UITenseness() const { return UITenseness_; }
+        double loudness() const { return loudness_; }
+
         double runStep(double lambda, double noiseSource)
         {
             auto timeStep = 1.0 / sampleRate;
@@ -380,6 +385,7 @@ namespace pinktrombone
         std::vector<double>& targetDiameter() { return targetDiameter_; }
         const std::vector<double>& noseDiameter() const { return noseDiameter_; }
         void velumTarget(double value) { velumTarget_ = value; }
+        double velumTarget() const { return velumTarget_; }
 
         void turbulanceNoise(double intensity, double index, double diameter)
         {
@@ -685,16 +691,51 @@ namespace pinktrombone
                     blockIndex_ = 0;
                     glottis_.finishBlock();
                     tract_.finishBlock(blockTime_);
+                    dumpParameters();
                 }
             }
         }
 
         void startSound()
         {
+            ofs.open("dump.bin", std::ios::binary);
         }
 
         void started(bool value) { started_ = value; }
         bool started() const { return started_; }
+
+    private:
+        inline void push_double_to_vector(std::vector<float>& vector, double value)
+        {
+            vector.push_back(static_cast<float>(value));
+        }
+
+        void dumpParameters()
+        {
+#if 0
+            std::cout << glottis_.isTouched() << " "
+                << glottis_.UIFrequency() << " "
+                << glottis_.UITenseness() << " "
+                << glottis_.loudness() << " "
+                << tract_.velumTarget() << " "
+                << std::endl;
+#endif
+            std::vector<float> data;
+            push_double_to_vector(data, 0.0);
+            push_double_to_vector(data, glottis_.isTouched());
+            push_double_to_vector(data, glottis_.UIFrequency());
+            push_double_to_vector(data, glottis_.UITenseness());
+            push_double_to_vector(data, glottis_.loudness());
+            push_double_to_vector(data, tract_.velumTarget());
+            auto& targetDiameter = tract_.targetDiameter();
+            for (auto it = targetDiameter.begin(); it != targetDiameter.end(); ++it)
+            {
+                push_double_to_vector(data, *it);
+            }
+            data[0] = static_cast<float>(data.size());
+            ofs.write(reinterpret_cast<char*>(data.data()), data.size() * sizeof(float));
+        }
+
     private:
         Glottis& glottis_;
         Tract& tract_;
@@ -703,6 +744,7 @@ namespace pinktrombone
         double blockTime_ = 1.;
         bool started_ = false;
         bool soundOn_ = false;
+        std::ofstream ofs;
     };
 
     class TractUI {
@@ -781,7 +823,7 @@ namespace pinktrombone
 
             setRestDiameter();
             auto& targetDiameter = tract_.targetDiameter();
-            targetDiameter = tract_.restDiameter();
+            std::copy(tract_.restDiameter().begin(), tract_.restDiameter().end(), targetDiameter.begin());
 
             //other constrictions and nose
             tract_.velumTarget(0.01);
