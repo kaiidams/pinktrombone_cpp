@@ -1,5 +1,7 @@
 #include "pch.h"
+#ifdef USE_SDL
 #include <SDL.h>
+#endif
 #include "pinktrombone.h"
 
 #define WINDOW_WIDTH 640

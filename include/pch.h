@@ -43,4 +43,6 @@
 #include <utility>
 #include <vector>
 
+#ifdef USE_SDL
 #include <SDL.h>
+#endif

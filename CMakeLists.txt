@@ -12,6 +12,7 @@ add_executable(pinktrombone_cpp
     src/noise.cpp
  "include/pinktrombone.h")
 target_precompile_headers(pinktrombone_cpp PRIVATE "include/pch.h")
+add_compile_definitions(USE_SDL)
 
 target_include_directories(pinktrombone_cpp PRIVATE include)
 target_link_libraries(pinktrombone_cpp
