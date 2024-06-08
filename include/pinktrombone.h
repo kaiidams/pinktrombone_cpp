@@ -52,9 +52,11 @@ Version 2024-06-01
 
 #include <algorithm>
 #include <vector>
-#include <cmath>
+#include <map>
 #include <iostream>
 #include <fstream>
+#include <cmath>
+#include <ctime>
 
 namespace pinktrombone
 {
@@ -114,9 +116,13 @@ namespace pinktrombone
             loudness_ = std::pow(UITenseness_, 0.25);
         }
 
+        void isTouched(bool value) { isTouched_ = value; }
         bool isTouched() const { return isTouched_; }
+        void UIFrequency(double value) { UIFrequency_ = value; }
         double UIFrequency() const { return UIFrequency_; }
+        void UITenseness(double value) { UITenseness_ = value; }
         double UITenseness() const { return UITenseness_; }
+        void loudness(double value) { loudness_ = value; }
         double loudness() const { return loudness_; }
 
         double runStep(double lambda, double noiseSource)

@@ -1,0 +1,1 @@
+gcc -Iinclude test.cpp src/noise.cpp -o test -lstdc++ -lm && ./test
