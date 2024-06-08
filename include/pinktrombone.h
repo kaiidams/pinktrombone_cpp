@@ -246,8 +246,8 @@ namespace pinktrombone
                 UIFrequency_ = baseNote_ * std::pow(2, semitone / 12);
                 if (intensity_ == 0) smoothFrequency_ = UIFrequency_;
                 //Glottis.UIRd = 3*local_y / (this.keyboardHeight-20);
-                double t = math::clamp(1 - local_y / (keyboardRect_.h - 28), 0, 1);
-                UITenseness_ = 1 - std::cos(t * M_PI * 0.5);
+                double t = math::clamp(1. - static_cast<double>(local_y) / (keyboardRect_.h - 28), 0., 1.);
+                UITenseness_ = 1. - std::cos(t * M_PI * 0.5);
                 loudness_ = std::pow(UITenseness_, 0.25);
                 x_ = touch.x;
                 y_ = local_y + keyboardRect_.y + 10;
@@ -266,16 +266,16 @@ namespace pinktrombone
         }
 
     private:
-        double waveformLength_;
-        double frequency_;
-        double Rd_;
-        double alpha_;
-        double E0_;
-        double epsilon_;
-        double shift_;
-        double Delta_;
-        double Te_;
-        double omega_;
+        double waveformLength_ = 0.;
+        double frequency_ = 0.;
+        double Rd_ = 0.;
+        double alpha_ = 0.;
+        double E0_ = 0.;
+        double epsilon_ = 0.;
+        double shift_ = 0.;
+        double Delta_ = 0.;
+        double Te_ = 0.;
+        double omega_ = 0.;
 
         double timeInWaveform_ = 0;
         double oldFrequency_ = 140;
@@ -328,8 +328,8 @@ namespace pinktrombone
             for (auto i = 0; i < n_; i++)
             {
                 double diameter = 0.;
-                if (i < 7 * n_ / 44 - 0.5) diameter = 0.6;
-                else if (i < 12 * n_ / 44) diameter = 1.1;
+                if (i < 7. * n_ / 44. - 0.5) diameter = 0.6;
+                else if (i < 12. * n_ / 44.) diameter = 1.1;
                 else diameter = 1.5;
                 diameter_[i] = restDiameter_[i] = targetDiameter_[i] = newDiameter_[i] = diameter;
             }
@@ -395,8 +395,8 @@ namespace pinktrombone
             int newLastObstruction = -1;
             for (auto i = 0; i < n_; i++)
             {
-                auto diameter = diameter_[i];
-                auto targetDiameter = targetDiameter_[i];
+                double diameter = diameter_[i];
+                double targetDiameter = targetDiameter_[i];
                 if (diameter <= 0) newLastObstruction = i;
                 double slowReturn;
                 if (i < noseStart_) slowReturn = 0.6;
@@ -455,7 +455,7 @@ namespace pinktrombone
     public:
         void runStep(double glottalOutput, double turbulenceNoise, double lambda)
         {
-            auto updateAmplitudes = (static_cast<double>(std::rand()) / RAND_MAX < 0.1);
+            bool updateAmplitudes = (static_cast<double>(std::rand()) / RAND_MAX < 0.1);
 
             //mouth
             processTransients();
@@ -527,7 +527,6 @@ namespace pinktrombone
             }
 
             noseOutput_ = noseR_[noseLength_ - 1];
-
         }
 
         void finishBlock(double blockTime)
@@ -539,7 +538,7 @@ namespace pinktrombone
     private:
         void addTransient(int position)
         {
-            Transient trans;
+            Transient trans{};
             trans.position = position;
             trans.timeAlive = 0;
             trans.lifeTime = 0.2;
@@ -571,7 +570,6 @@ namespace pinktrombone
             }
         }
 
-    private:
         void addTurbulenceNoise(double turbulenceNoise)
         {
             if (turbulenceIntensity_ == 0) return;
@@ -660,15 +658,17 @@ namespace pinktrombone
             double* outArray = out;
             std::vector<double> inputArray1(len);
             std::vector<double> inputArray2(len);
-            for (size_t j = 0; j < len; j++) {
+            for (size_t j = 0; j < len; j++)
+            {
                 // TODO Apply 500Hz bandpass for aspirate
                 inputArray1[j] = (static_cast<double>(std::rand()) / RAND_MAX) * 2. - 1.;
                 // TODO Apply 1000Hz bandpass for fricative
                 inputArray2[j] = (static_cast<double>(std::rand()) / RAND_MAX) * 2. - 1.;
             }
-            for (size_t j = 0; j < len; j++) {
-                double lambda1 = static_cast<double>(j) / len;
-                double lambda2 = (j + 0.5) / len;
+            for (size_t j = 0; j < len; j++)
+            {
+                double lambda1 = static_cast<double>(blockIndex_) / blockLength_;
+                double lambda2 = (blockIndex_ + 0.5) / blockLength_;
                 double glottalOutput = glottis_.runStep(lambda1, inputArray1[j]);
 
                 double vocalOutput = 0;
@@ -678,9 +678,15 @@ namespace pinktrombone
                 tract_.runStep(glottalOutput, inputArray2[j], lambda2);
                 vocalOutput += tract_.lipOutput() + tract_.noseOutput();
                 outArray[j] = vocalOutput * 0.125;
+
+                ++blockIndex_;
+                if (blockIndex_ >= blockLength_)
+                {
+                    blockIndex_ = 0;
+                    glottis_.finishBlock();
+                    tract_.finishBlock(blockTime_);
+                }
             }
-            glottis_.finishBlock();
-            tract_.finishBlock(blockTime_);
         }
 
         void startSound()
@@ -692,6 +698,7 @@ namespace pinktrombone
     private:
         Glottis& glottis_;
         Tract& tract_;
+        int blockIndex_ = 0;
         int blockLength_ = 512;
         double blockTime_ = 1.;
         bool started_ = false;
@@ -702,7 +709,8 @@ namespace pinktrombone
     public:
         TractUI(Tract& tract) : tract_{ tract }
         {
-
+            setRestDiameter();
+            tract_.targetDiameter() = tract_.restDiameter();
         }
         double getIndex(int x, int y) const
         {
@@ -772,7 +780,8 @@ namespace pinktrombone
             }
 
             setRestDiameter();
-            tract_.targetDiameter() = tract_.restDiameter();
+            auto& targetDiameter = tract_.targetDiameter();
+            targetDiameter = tract_.restDiameter();
 
             //other constrictions and nose
             tract_.velumTarget(0.01);
@@ -805,9 +814,9 @@ namespace pinktrombone
                         if (relpos <= 0) shrink = 0;
                         else if (relpos > width) shrink = 1;
                         else shrink = 0.5 * (1 - std::cos(M_PI * relpos / width));
-                        if (diameter < tract_.targetDiameter()[intIndex + i])
+                        if (diameter < targetDiameter[intIndex + i])
                         {
-                            tract_.targetDiameter()[intIndex + i] = diameter + (tract_.targetDiameter()[intIndex + i] - diameter) * shrink;
+                            targetDiameter[intIndex + i] = diameter + (targetDiameter[intIndex + i] - diameter) * shrink;
                         }
                     }
                 }
@@ -957,13 +966,11 @@ namespace pinktrombone
                 else if (touch.alive)
                 {
                     ++it;
-                    std::cout << touch.fricative_intensity << std::endl;
                     touch.fricative_intensity = math::clamp((time - touch.startTime) / fricativeAttackTime, 0., 1.);
                 }
                 else
                 {
                     ++it;
-                    std::cout << touch.fricative_intensity << std::endl;
                     touch.fricative_intensity = math::clamp(1 - (time - touch.endTime) / fricativeAttackTime, 0., 1.);
                 }
             }
