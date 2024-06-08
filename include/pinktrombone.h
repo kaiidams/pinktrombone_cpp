@@ -305,6 +305,7 @@ namespace pinktrombone
 
     class Tract
     {
+    private:
         struct Transient
         {
             int position;
@@ -315,7 +316,7 @@ namespace pinktrombone
         };
 
     public:
-        Tract(const Glottis& glottis) : glottis_(glottis)
+        Tract(const Glottis& glottis, int n) : glottis_{ glottis }, n_{ n }
         {
             bladeStart_ = bladeStart_ * n_ / 44;
             tipStart_ = tipStart_ * n_ / 44;
@@ -358,7 +359,6 @@ namespace pinktrombone
                 if (d < 1) diameter = 0.4 + 1.6 * d;
                 else diameter = 0.5 + 1.5 * (2 - d);
                 diameter = std::min(diameter, 1.9);
-                // diameter = 2.3 * std::sin(M_PI * i / _noseLength) + .2;
                 noseDiameter_[i] = diameter;
             }
             newReflectionLeft_ = newReflectionRight_ = newReflectionNose_ = 0;
@@ -380,6 +380,13 @@ namespace pinktrombone
         std::vector<double>& targetDiameter() { return targetDiameter_; }
         const std::vector<double>& noseDiameter() const { return noseDiameter_; }
         void velumTarget(double value) { velumTarget_ = value; }
+
+        void turbulanceNoise(double intensity, double index, double diameter)
+        {
+            turbulenceIntensity_ = intensity;
+            turbulenceIndex_ = index;
+            turbulenceDiameter_ = diameter;
+        }
 
     private:
         void reshapeTract(double deltaTime)
@@ -528,8 +535,8 @@ namespace pinktrombone
             reshapeTract(blockTime);
             calculateReflections();
         }
-    private:
 
+    private:
         void addTransient(int position)
         {
             Transient trans;
@@ -562,14 +569,6 @@ namespace pinktrombone
                     ++it;
                 }
             }
-        }
-
-    public:
-        void turbulanceNoise(double intensity, double index, double diameter)
-        {
-            turbulenceIntensity_ = intensity;
-            turbulenceIndex_ = index;
-            turbulenceDiameter_ = diameter;
         }
 
     private:
@@ -883,7 +882,7 @@ namespace pinktrombone
     class UI
     {
     public:
-        UI() : glottis_{}, tract_{ glottis_ }, tractUI_{ tract_ }, audioSystem_{glottis_, tract_}
+        UI(int n) : glottis_{}, tract_{ glottis_, n }, tractUI_{ tract_ }, audioSystem_{ glottis_, tract_ }
         {
         }
 

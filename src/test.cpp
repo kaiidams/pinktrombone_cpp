@@ -7,7 +7,8 @@
 
 using namespace pinktrombone;
 
-static UI ui;
+// static UI ui{ 35 };
+static UI ui{ 44 };
 static int channels;
 
 void SDLCALL MyAudioCallback(void* userdata, Uint8* stream, int len)
