@@ -85,11 +85,9 @@ namespace pinktrombone
         }
     }
 
-    bool autoWobble = false;
+    bool autoWobble = true;
     bool alwaysVoice = false;
-    int channels;
     const int sampleRate = 44100;
-    double blockTime = 4096 / static_cast<double>(sampleRate);
 
     struct Touch
     {
@@ -133,7 +131,7 @@ namespace pinktrombone
             return out;
         }
 
-        double getNoiseModulator()
+        double getNoiseModulator() const
         {
             auto voiced = 0.1 + 0.2 * std::max(0.0, std::sin(M_PI * 2 * timeInWaveform_ / waveformLength_));
             //return 0.3;
@@ -167,6 +165,7 @@ namespace pinktrombone
             intensity_ = math::clamp(intensity_, 0., 1.);
         }
 
+    private:
         void setupWaveform(double lambda)
         {
             frequency_ = oldFrequency_ * (1 - lambda) + newFrequency_ * lambda;
@@ -221,6 +220,7 @@ namespace pinktrombone
             return output * intensity_ * loudness_;
         }
 
+    public:
         void handleTouches(const std::map<std::string, Touch>& touchesWithMouse)
         {
             if (!touch_.empty() && !touchesWithMouse.at(touch_).alive) touch_ = "";
@@ -264,6 +264,7 @@ namespace pinktrombone
                 }
             }
         }
+
     private:
         double waveformLength_;
         double frequency_;
@@ -279,24 +280,27 @@ namespace pinktrombone
         double timeInWaveform_ = 0;
         double oldFrequency_ = 140;
         double newFrequency_ = 140;
-        double UIFrequency_ = 140;
         double smoothFrequency_ = 140;
         double oldTenseness_ = 0.6;
         double newTenseness_ = 0.6;
-        double UITenseness_;
         double totalTime_ = 0;
         double vibratoAmount_ = 0.005;
         double vibratoFrequency_ = 6;
         double intensity_ = 0;
         double loudness_ = 1;
-        bool isTouched_ = false;
-        std::string touch_;
 
-        const int semitones_ = 20;
-        const double baseNote_ = 87.3071; //F
+        // Control
+        double UIFrequency_ = 140;
+        double UITenseness_;
+        bool isTouched_ = false;
+
+        // UI
+        std::string touch_;
         int x_;
         int y_;
-        SDL_Rect keyboardRect_{ 20, 240, 600, 100 };
+        const int semitones_ = 20;
+        const double baseNote_ = 87.3071; //F
+        const SDL_Rect keyboardRect_{ 20, 240, 600, 100 };
     };
 
     class Tract
@@ -310,7 +314,7 @@ namespace pinktrombone
             double exponent;
         };
 
-        Glottis& glottis;
+        const Glottis& glottis_;
         int n_ = 44;
         int bladeStart_ = 10;
         int tipStart_ = 32;
@@ -356,14 +360,14 @@ namespace pinktrombone
         double reflectionNose_;
 
     public:
-        Tract(Glottis& glottis) : glottis(glottis)
+        Tract(const Glottis& glottis) : glottis_(glottis)
         {
-            this->bladeStart_ = this->bladeStart_ * n_ / 44;
-            this->tipStart_ = this->tipStart_ * n_ / 44;
-            this->lipStart_ = this->lipStart_ * n_ / 44;
-            this->diameter_.resize(n_);
-            this->restDiameter_.resize(n_);
-            this->targetDiameter_.resize(n_);
+            bladeStart_ = bladeStart_ * n_ / 44;
+            tipStart_ = tipStart_ * n_ / 44;
+            lipStart_ = lipStart_ * n_ / 44;
+            diameter_.resize(n_);
+            restDiameter_.resize(n_);
+            targetDiameter_.resize(n_);
             newDiameter_.resize(n_);
             for (auto i = 0; i < n_; i++)
             {
@@ -371,16 +375,16 @@ namespace pinktrombone
                 if (i < 7 * n_ / 44 - 0.5) diameter = 0.6;
                 else if (i < 12 * n_ / 44) diameter = 1.1;
                 else diameter = 1.5;
-                this->diameter_[i] = this->restDiameter_[i] = this->targetDiameter_[i] = newDiameter_[i] = diameter;
+                diameter_[i] = restDiameter_[i] = targetDiameter_[i] = newDiameter_[i] = diameter;
             }
-            this->R_.resize(n_);
-            this->L_.resize(n_);
-            this->reflection_.resize(n_ + 1);
+            R_.resize(n_);
+            L_.resize(n_);
+            reflection_.resize(n_ + 1);
             newReflection_.resize(n_ + 1);
-            this->junctionOutputR_.resize(n_ + 1);
-            this->junctionOutputL_.resize(n_ + 1);
-            this->A_.resize(n_);
-            this->maxAmplitude_.resize(n_);
+            junctionOutputR_.resize(n_ + 1);
+            junctionOutputL_.resize(n_ + 1);
+            A_.resize(n_);
+            maxAmplitude_.resize(n_);
 
             noseLength_ = 28 * n_ / 44;
             noseStart_ = n_ - noseLength_ + 1;
@@ -403,9 +407,9 @@ namespace pinktrombone
                 noseDiameter_[i] = diameter;
             }
             newReflectionLeft_ = newReflectionRight_ = newReflectionNose_ = 0;
-            this->calculateReflections();
-            this->calculateNoseReflections();
-            noseDiameter_[0] = this->velumTarget_;
+            calculateReflections();
+            calculateNoseReflections();
+            noseDiameter_[0] = velumTarget_;
         }
 
         int n() const { return n_; }
@@ -424,27 +428,27 @@ namespace pinktrombone
 
         void reshapeTract(double deltaTime)
         {
-            double amount = deltaTime * this->movementSpeed_;
+            double amount = deltaTime * movementSpeed_;
             int newLastObstruction = -1;
             for (auto i = 0; i < n_; i++)
             {
-                auto diameter = this->diameter_[i];
-                auto targetDiameter = this->targetDiameter_[i];
+                auto diameter = diameter_[i];
+                auto targetDiameter = targetDiameter_[i];
                 if (diameter <= 0) newLastObstruction = i;
                 double slowReturn;
                 if (i < noseStart_) slowReturn = 0.6;
-                else if (i >= this->tipStart_) slowReturn = 1.0;
-                else slowReturn = 0.6 + 0.4 * (i - noseStart_) / (this->tipStart_ - noseStart_);
-                this->diameter_[i] = math::moveTowards(diameter, targetDiameter, slowReturn * amount, 2 * amount);
+                else if (i >= tipStart_) slowReturn = 1.0;
+                else slowReturn = 0.6 + 0.4 * (i - noseStart_) / (tipStart_ - noseStart_);
+                diameter_[i] = math::moveTowards(diameter, targetDiameter, slowReturn * amount, 2 * amount);
             }
-            if (this->lastObstruction_ > -1 && newLastObstruction == -1 && noseA_[0] < 0.05)
+            if (lastObstruction_ > -1 && newLastObstruction == -1 && noseA_[0] < 0.05)
             {
-                this->addTransient(this->lastObstruction_);
+                addTransient(lastObstruction_);
             }
-            this->lastObstruction_ = newLastObstruction;
+            lastObstruction_ = newLastObstruction;
 
-            amount = deltaTime * this->movementSpeed_;
-            noseDiameter_[0] = math::moveTowards(noseDiameter_[0], this->velumTarget_,
+            amount = deltaTime * movementSpeed_;
+            noseDiameter_[0] = math::moveTowards(noseDiameter_[0], velumTarget_,
                 amount * 0.25, amount * 0.1);
             noseA_[0] = noseDiameter_[0] * noseDiameter_[0];
         }
@@ -453,23 +457,23 @@ namespace pinktrombone
         {
             for (auto i = 0; i < n_; i++)
             {
-                this->A_[i] = this->diameter_[i] * this->diameter_[i]; //ignoring PI etc.
+                A_[i] = diameter_[i] * diameter_[i]; //ignoring PI etc.
             }
             for (auto i = 1; i < n_; i++)
             {
-                this->reflection_[i] = newReflection_[i];
-                if (this->A_[i] == 0) newReflection_[i] = 0.999; //to prevent some bad behaviour if 0
-                else newReflection_[i] = (this->A_[i - 1] - this->A_[i]) / (this->A_[i - 1] + this->A_[i]);
+                reflection_[i] = newReflection_[i];
+                if (A_[i] == 0) newReflection_[i] = 0.999; //to prevent some bad behaviour if 0
+                else newReflection_[i] = (A_[i - 1] - A_[i]) / (A_[i - 1] + A_[i]);
             }
 
             //now at junction with nose
 
-            this->reflectionLeft_ = newReflectionLeft_;
-            this->reflectionRight_ = newReflectionRight_;
-            this->reflectionNose_ = newReflectionNose_;
-            auto sum = this->A_[noseStart_] + this->A_[noseStart_ + 1] + noseA_[0];
-            newReflectionLeft_ = (2 * this->A_[noseStart_] - sum) / sum;
-            newReflectionRight_ = (2 * this->A_[noseStart_ + 1] - sum) / sum;
+            reflectionLeft_ = newReflectionLeft_;
+            reflectionRight_ = newReflectionRight_;
+            reflectionNose_ = newReflectionNose_;
+            auto sum = A_[noseStart_] + A_[noseStart_ + 1] + noseA_[0];
+            newReflectionLeft_ = (2 * A_[noseStart_] - sum) / sum;
+            newReflectionRight_ = (2 * A_[noseStart_ + 1] - sum) / sum;
             newReflectionNose_ = (2 * noseA_[0] - sum) / sum;
         }
 
@@ -490,50 +494,50 @@ namespace pinktrombone
             auto updateAmplitudes = (static_cast<double>(std::rand()) / RAND_MAX < 0.1);
 
             //mouth
-            this->processTransients();
-            this->addTurbulenceNoise(turbulenceNoise);
+            processTransients();
+            addTurbulenceNoise(turbulenceNoise);
 
-            //this->_glottalReflection = -0.8 + 1.6 * Glottis.newTenseness;
-            this->junctionOutputR_[0] = this->L_[0] * this->glottalReflection_ + glottalOutput;
-            this->junctionOutputL_[n_] = this->R_[n_ - 1] * this->lipReflection_;
+            //_glottalReflection = -0.8 + 1.6 * Glottis.newTenseness;
+            junctionOutputR_[0] = L_[0] * glottalReflection_ + glottalOutput;
+            junctionOutputL_[n_] = R_[n_ - 1] * lipReflection_;
 
             for (auto i = 1; i < n_; i++)
             {
-                auto r = this->reflection_[i] * (1 - lambda) + newReflection_[i] * lambda;
-                auto w = r * (this->R_[i - 1] + this->L_[i]);
-                this->junctionOutputR_[i] = this->R_[i - 1] - w;
-                this->junctionOutputL_[i] = this->L_[i] + w;
+                auto r = reflection_[i] * (1 - lambda) + newReflection_[i] * lambda;
+                auto w = r * (R_[i - 1] + L_[i]);
+                junctionOutputR_[i] = R_[i - 1] - w;
+                junctionOutputL_[i] = L_[i] + w;
             }
 
             //now at junction with nose
             auto i = noseStart_;
-            auto r = newReflectionLeft_ * (1 - lambda) + this->reflectionLeft_ * lambda;
-            this->junctionOutputL_[i] = r * this->R_[i - 1] + (1 + r) * (noseL_[0] + this->L_[i]);
-            r = newReflectionRight_ * (1 - lambda) + this->reflectionRight_ * lambda;
-            this->junctionOutputR_[i] = r * this->L_[i] + (1 + r) * (this->R_[i - 1] + noseL_[0]);
-            r = newReflectionNose_ * (1 - lambda) + this->reflectionNose_ * lambda;
-            noseJunctionOutputR_[0] = r * noseL_[0] + (1 + r) * (this->L_[i] + this->R_[i - 1]);
+            auto r = newReflectionLeft_ * (1 - lambda) + reflectionLeft_ * lambda;
+            junctionOutputL_[i] = r * R_[i - 1] + (1 + r) * (noseL_[0] + L_[i]);
+            r = newReflectionRight_ * (1 - lambda) + reflectionRight_ * lambda;
+            junctionOutputR_[i] = r * L_[i] + (1 + r) * (R_[i - 1] + noseL_[0]);
+            r = newReflectionNose_ * (1 - lambda) + reflectionNose_ * lambda;
+            noseJunctionOutputR_[0] = r * noseL_[0] + (1 + r) * (L_[i] + R_[i - 1]);
 
             for (auto i = 0; i < n_; i++)
             {
-                this->R_[i] = this->junctionOutputR_[i] * 0.999;
-                this->L_[i] = this->junctionOutputL_[i + 1] * 0.999;
+                R_[i] = junctionOutputR_[i] * 0.999;
+                L_[i] = junctionOutputL_[i + 1] * 0.999;
 
-                //this->_R[i] = std::clamp(this->_junctionOutputR[i] * this->_fade, -1, 1);
-                //this->_L[i] = std::clamp(this->_junctionOutputL[i+1] * this->_fade, -1, 1);    
+                //_R[i] = std::clamp(_junctionOutputR[i] * _fade, -1, 1);
+                //_L[i] = std::clamp(_junctionOutputL[i+1] * _fade, -1, 1);    
 
                 if (updateAmplitudes)
                 {
-                    auto amplitude = std::abs(this->R_[i] + this->L_[i]);
-                    if (amplitude > this->maxAmplitude_[i]) this->maxAmplitude_[i] = amplitude;
-                    else this->maxAmplitude_[i] *= 0.999;
+                    auto amplitude = std::abs(R_[i] + L_[i]);
+                    if (amplitude > maxAmplitude_[i]) maxAmplitude_[i] = amplitude;
+                    else maxAmplitude_[i] *= 0.999;
                 }
             }
 
-            this->lipOutput_ = this->R_[n_ - 1];
+            lipOutput_ = R_[n_ - 1];
 
             //nose     
-            noseJunctionOutputL_[noseLength_] = noseR_[noseLength_ - 1] * this->lipReflection_;
+            noseJunctionOutputL_[noseLength_] = noseR_[noseLength_ - 1] * lipReflection_;
 
             for (auto i = 1; i < noseLength_; i++)
             {
@@ -544,11 +548,11 @@ namespace pinktrombone
 
             for (auto i = 0; i < noseLength_; i++)
             {
-                noseR_[i] = noseJunctionOutputR_[i] * this->fade_;
-                noseL_[i] = noseJunctionOutputL_[i + 1] * this->fade_;
+                noseR_[i] = noseJunctionOutputR_[i] * fade_;
+                noseL_[i] = noseJunctionOutputL_[i + 1] * fade_;
 
-                //_noseR[i] = std::clamp(_noseJunctionOutputR[i] * this->_fade, -1, 1);
-                //_noseL[i] = std::clamp(_noseJunctionOutputL[i+1] * this->_fade, -1, 1);    
+                //_noseR[i] = std::clamp(_noseJunctionOutputR[i] * _fade, -1, 1);
+                //_noseL[i] = std::clamp(_noseJunctionOutputL[i+1] * _fade, -1, 1);    
 
                 if (updateAmplitudes)
                 {
@@ -562,10 +566,10 @@ namespace pinktrombone
 
         }
 
-        void finishBlock()
+        void finishBlock(double blockTime)
         {
-            this->reshapeTract(blockTime);
-            this->calculateReflections();
+            reshapeTract(blockTime);
+            calculateReflections();
         }
 
         void addTransient(int position)
@@ -576,17 +580,17 @@ namespace pinktrombone
             trans.lifeTime = 0.2;
             trans.strength = 0.3;
             trans.exponent = 200;
-            this->transients_.push_back(trans);
+            transients_.push_back(trans);
         }
 
         void processTransients()
         {
-            for (auto i = 0; i < this->transients_.size(); i++)
+            for (auto i = 0; i < transients_.size(); i++)
             {
-                auto trans = this->transients_[i];
+                auto trans = transients_[i];
                 auto amplitude = trans.strength * std::pow(2, -trans.exponent * trans.timeAlive);
-                this->R_[trans.position] += amplitude / 2;
-                this->L_[trans.position] += amplitude / 2;
+                R_[trans.position] += amplitude / 2;
+                L_[trans.position] += amplitude / 2;
                 trans.timeAlive += 1.0 / (sampleRate * 2);
             }
             for (auto it = transients_.begin(); it != transients_.end();)
@@ -616,27 +620,27 @@ namespace pinktrombone
         void addTurbulenceNoise(double turbulenceNoise)
         {
             if (turbulenceIntensity_ == 0) return;
-            this->addTurbulenceNoiseAtIndex(0.66 * turbulenceNoise * turbulenceIntensity_, turbulenceIndex_, turbulenceDiameter_);
+            addTurbulenceNoiseAtIndex(0.66 * turbulenceNoise * turbulenceIntensity_, turbulenceIndex_, turbulenceDiameter_);
         }
 
         void addTurbulenceNoiseAtIndex(double turbulenceNoise, double index, double diameter)
         {
             int i = static_cast<int>(index);
             double delta = index - i;
-            turbulenceNoise *= glottis.getNoiseModulator();
+            turbulenceNoise *= glottis_.getNoiseModulator();
             double thinness0 = math::clamp(8 * (0.7 - diameter), 0., 1.);
             double openness = math::clamp(30 * (diameter - 0.3), 0., 1.);
             double noise0 = turbulenceNoise * (1 - delta) * thinness0 * openness;
             double noise1 = turbulenceNoise * delta * thinness0 * openness;
             if (i + 1 < R_.size() && i + 1 < L_.size())
             {
-                this->R_[i + 1] += noise0 / 2;
-                this->L_[i + 1] += noise0 / 2;
+                R_[i + 1] += noise0 / 2;
+                L_[i + 1] += noise0 / 2;
             }
             if (i + 1 < R_.size() && i + 2 < L_.size())
             {
-                this->R_[i + 2] += noise1 / 2;
-                this->L_[i + 2] += noise1 / 2;
+                R_[i + 2] += noise1 / 2;
+                L_[i + 2] += noise1 / 2;
             }
         }
     };
@@ -671,7 +675,7 @@ namespace pinktrombone
                 outArray[j] = vocalOutput * 0.125;
             }
             glottis_.finishBlock();
-            tract_.finishBlock();
+            tract_.finishBlock(blockTime_);
         }
 
         void startSound()
@@ -683,7 +687,10 @@ namespace pinktrombone
     private:
         Glottis& glottis_;
         Tract& tract_;
-        bool started_;
+        int blockLength_ = 512;
+        double blockTime_ = 1.;
+        bool started_ = false;
+        bool soundOn_ = false;
     };
 
     class TractUI {
