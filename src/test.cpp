@@ -9,43 +9,11 @@ using namespace pinktrombone;
 
 static UI ui;
 
-extern "C" void init()
-{
-}
-
-extern "C" void process(double lambda, size_t len, double *out)
-{
-    double *outArray = out;
-    std::vector<double> inputArray1(len);
-    std::vector<double> inputArray2(len);
-    for (size_t j = 0; j < len; j++) {
-        // TODO Apply 500Hz bandpass for aspirate
-        inputArray1[j] = (static_cast<double>(std::rand()) / RAND_MAX) * 2. - 1.;
-        // TODO Apply 1000Hz bandpass for fricative
-        inputArray2[j] = (static_cast<double>(std::rand()) / RAND_MAX) * 2. - 1.;
-    }
-    for (size_t j = 0; j < len; j++) {
-        double lambda1 = static_cast<double>(j) / len;
-        double lambda2 = (j + 0.5) / len;
-        double glottalOutput = ui.glottis.runStep(lambda1, inputArray1[j]);
-        
-        double vocalOutput = 0;
-        // Tract runs at twice the sample rate 
-        ui.tract.runStep(glottalOutput, inputArray2[j], lambda1);
-        vocalOutput += ui.tract.lipOutput() + ui.tract.noseOutput();
-        ui.tract.runStep(glottalOutput, inputArray2[j], lambda2);
-        vocalOutput += ui.tract.lipOutput() + ui.tract.noseOutput();
-        outArray[j] = vocalOutput * 0.125;
-    }
-    ui.glottis.finishBlock();
-    ui.tract.finishBlock();
-}
-
 void SDLCALL MyAudioCallback(void* userdata, Uint8* stream, int len)
 {
     size_t buflen = len / sizeof(float) / channels;
     std::vector<double> buf(buflen);
-    process(0.0, buflen, buf.data());
+    ui.audioSystem().process(0.0, buflen, buf.data());
     float* outArray = reinterpret_cast<float*>(stream);
     for (int i = 0; i < buflen * channels; i++)
     {
@@ -60,8 +28,6 @@ int main(int argc, char* argv[])
         std::cout << SDL_GetError() << std::endl;
         std::exit(EXIT_FAILURE);
     }
-
-    init();
 
     SDL_Window* window = SDL_CreateWindow(
         "Pink Trombone",
@@ -125,7 +91,8 @@ int main(int argc, char* argv[])
             }
         }
 
-        ui.tractUI.draw(renderer);
+        ui.tractUI().draw(renderer);
+        ui.draw(renderer);
         ui.updateTouches();
         SDL_UpdateWindowSurface(window);
     }

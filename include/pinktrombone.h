@@ -58,35 +58,38 @@ Version 2024-06-01
 
 namespace pinktrombone
 {
-    namespace noise {
+    namespace noise
+    {
         double simplex1(double x);
         double simplex2(double xin, double yin);
     }
 
-    template<typename T>
-    T clamp(T x, T a, T b)
+    namespace math
     {
-        return std::min(std::max(x, a), b);
-    }
+        template<typename T>
+        T clamp(T x, T a, T b)
+        {
+            return std::min(std::max(x, a), b);
+        }
 
-    double moveTowards(double current, double target, double amount)
-    {
-        if (current < target) return std::min(current + amount, target);
-        else return std::max(current - amount, target);
-    }
+        double moveTowards(double current, double target, double amount)
+        {
+            if (current < target) return std::min(current + amount, target);
+            else return std::max(current - amount, target);
+        }
 
-    double moveTowards(double current, double target, double amountUp, double amountDown)
-    {
-        if (current < target) return std::min(current + amountUp, target);
-        else return std::max(current - amountDown, target);
+        double moveTowards(double current, double target, double amountUp, double amountDown)
+        {
+            if (current < target) return std::min(current + amountUp, target);
+            else return std::max(current - amountDown, target);
+        }
     }
-
 
     bool autoWobble = false;
     bool alwaysVoice = false;
     int channels;
     const int sampleRate = 44100;
-    double blockTime = 4096 / 44100.;
+    double blockTime = 4096 / static_cast<double>(sampleRate);
 
     struct Touch
     {
@@ -95,46 +98,19 @@ namespace pinktrombone
         double fricative_intensity;
         double endTime;
         bool alive;
+        int x;
+        int y;
         double index;
         double diameter;
     };
 
     class Glottis
     {
-    private:
-        double waveformLength_;
-        double frequency_;
-        double Rd_;
-        double alpha_;
-        double E0_;
-        double epsilon_;
-        double shift_;
-        double Delta_;
-        double Te_;
-        double omega_;
-
-        double timeInWaveform_ = 0;
-        double oldFrequency_ = 140;
-        double newFrequency_ = 140;
-        double UIFrequency_ = 140;
-        double smoothFrequency_ = 140;
-        double oldTenseness_ = 0.6;
-        double newTenseness_ = 0.6;
-        const double UITenseness_;
-        double totalTime_ = 0;
-        double vibratoAmount_ = 0.005;
-        double vibratoFrequency_ = 6;
-        double intensity_ = 0;
-        double loudness_ = 1;
-        bool isTouched_ = false;
-        std::string touch_;
-
     public:
         Glottis() : UITenseness_{ 1 - std::cos(0.6 * M_PI * 0.5) }
         {
-            double baseNote = 87.3071; // F2
-            double semitone = 8; // C#
-            UIFrequency_ = baseNote * std::pow(2, semitone / 12);
+            double semitone = 8.; // C#
+            UIFrequency_ = baseNote_ * std::pow(2., semitone / 12.);
             if (intensity_ == 0) smoothFrequency_ = UIFrequency_;
             //Glottis.UIRd = 3*local_y / (keyboardHeight-20);
             loudness_ = std::pow(UITenseness_, 0.25);
@@ -188,7 +164,7 @@ namespace pinktrombone
 
             if (isTouched_ || alwaysVoice) { intensity_ += 0.13; }
             else { intensity_ -= 0.05; }
-            intensity_ = clamp(intensity_, 0., 1.);
+            intensity_ = math::clamp(intensity_, 0., 1.);
         }
 
         void setupWaveform(double lambda)
@@ -255,32 +231,72 @@ namespace pinktrombone
                 {
                     auto& touch = it->second;
                     if (!touch.alive) continue;
-                    // TODO if (touch.y < this.keyboardTop) continue;
+                    if (touch.y < keyboardRect_.y) continue;
                     touch_ = it->second.id;
                 }
             }
 
             if (!touch_.empty())
             {
-                // TODO
-#if 0
-                var local_y = this.touch.y - this.keyboardTop - 10;
-                var local_x = this.touch.x - this.keyboardLeft;
-                local_y = Math.clamp(local_y, 0, this.keyboardHeight - 26);
-                var semitone = this.semitones * local_x / this.keyboardWidth + 0.5;
-                Glottis.UIFrequency = this.baseNote * Math.pow(2, semitone / 12);
-                if (Glottis.intensity == 0) Glottis.smoothFrequency = Glottis.UIFrequency;
+                auto& touch = touchesWithMouse.at(touch_);
+                int local_y = touch.y - keyboardRect_.y - 10;
+                int local_x = touch.x - keyboardRect_.x;
+                local_y = math::clamp(local_y, 0, keyboardRect_.h - 26);
+                double semitone = semitones_ * local_x / keyboardRect_.w + 0.5;
+                UIFrequency_ = baseNote_ * std::pow(2, semitone / 12);
+                if (intensity_ == 0) smoothFrequency_ = UIFrequency_;
                 //Glottis.UIRd = 3*local_y / (this.keyboardHeight-20);
-                var t = Math.clamp(1 - local_y / (this.keyboardHeight - 28), 0, 1);
-                Glottis.UITenseness = 1 - Math.cos(t * Math.PI * 0.5);
-                Glottis.loudness = Math.pow(Glottis.UITenseness, 0.25);
-                this.x = this.touch.x;
-                this.y = local_y + this.keyboardTop + 10;
-#endif
+                double t = math::clamp(1 - local_y / (keyboardRect_.h - 28), 0, 1);
+                UITenseness_ = 1 - std::cos(t * M_PI * 0.5);
+                loudness_ = std::pow(UITenseness_, 0.25);
+                x_ = touch.x;
+                y_ = local_y + keyboardRect_.y + 10;
             }
 
             isTouched_ = !touch_.empty();
+            // TODO
+            for (auto it = touchesWithMouse.begin(); it != touchesWithMouse.end(); ++it)
+            {
+                auto& touch = it->second;
+                if (touch.alive) {
+                    isTouched_ = true;
+                    break;
+                }
+            }
         }
+    private:
+        double waveformLength_;
+        double frequency_;
+        double Rd_;
+        double alpha_;
+        double E0_;
+        double epsilon_;
+        double shift_;
+        double Delta_;
+        double Te_;
+        double omega_;
+
+        double timeInWaveform_ = 0;
+        double oldFrequency_ = 140;
+        double newFrequency_ = 140;
+        double UIFrequency_ = 140;
+        double smoothFrequency_ = 140;
+        double oldTenseness_ = 0.6;
+        double newTenseness_ = 0.6;
+        double UITenseness_;
+        double totalTime_ = 0;
+        double vibratoAmount_ = 0.005;
+        double vibratoFrequency_ = 6;
+        double intensity_ = 0;
+        double loudness_ = 1;
+        bool isTouched_ = false;
+        std::string touch_;
+
+        const int semitones_ = 20;
+        const double baseNote_ = 87.3071; //F
+        int x_;
+        int y_;
+        SDL_Rect keyboardRect_{ 20, 240, 600, 100 };
     };
 
     class Tract
@@ -419,7 +435,7 @@ namespace pinktrombone
                 if (i < noseStart_) slowReturn = 0.6;
                 else if (i >= this->tipStart_) slowReturn = 1.0;
                 else slowReturn = 0.6 + 0.4 * (i - noseStart_) / (this->tipStart_ - noseStart_);
-                this->diameter_[i] = moveTowards(diameter, targetDiameter, slowReturn * amount, 2 * amount);
+                this->diameter_[i] = math::moveTowards(diameter, targetDiameter, slowReturn * amount, 2 * amount);
             }
             if (this->lastObstruction_ > -1 && newLastObstruction == -1 && noseA_[0] < 0.05)
             {
@@ -428,7 +444,7 @@ namespace pinktrombone
             this->lastObstruction_ = newLastObstruction;
 
             amount = deltaTime * this->movementSpeed_;
-            noseDiameter_[0] = moveTowards(noseDiameter_[0], this->velumTarget_,
+            noseDiameter_[0] = math::moveTowards(noseDiameter_[0], this->velumTarget_,
                 amount * 0.25, amount * 0.1);
             noseA_[0] = noseDiameter_[0] * noseDiameter_[0];
         }
@@ -608,15 +624,66 @@ namespace pinktrombone
             int i = static_cast<int>(index);
             double delta = index - i;
             turbulenceNoise *= glottis.getNoiseModulator();
-            double thinness0 = clamp(8 * (0.7 - diameter), 0., 1.);
-            double openness = clamp(30 * (diameter - 0.3), 0., 1.);
+            double thinness0 = math::clamp(8 * (0.7 - diameter), 0., 1.);
+            double openness = math::clamp(30 * (diameter - 0.3), 0., 1.);
             double noise0 = turbulenceNoise * (1 - delta) * thinness0 * openness;
             double noise1 = turbulenceNoise * delta * thinness0 * openness;
-            this->R_[i + 1] += noise0 / 2;
-            this->L_[i + 1] += noise0 / 2;
-            this->R_[i + 2] += noise1 / 2;
-            this->L_[i + 2] += noise1 / 2;
+            if (i + 1 < R_.size() && i + 1 < L_.size())
+            {
+                this->R_[i + 1] += noise0 / 2;
+                this->L_[i + 1] += noise0 / 2;
+            }
+            if (i + 1 < R_.size() && i + 2 < L_.size())
+            {
+                this->R_[i + 2] += noise1 / 2;
+                this->L_[i + 2] += noise1 / 2;
+            }
         }
+    };
+
+    class AudioSystem
+    {
+    public:
+        AudioSystem(Glottis& glottis, Tract& tract) : glottis_{ glottis }, tract_{ tract }, started_{ false } {}
+
+        void process(double lambda, size_t len, double* out)
+        {
+            double* outArray = out;
+            std::vector<double> inputArray1(len);
+            std::vector<double> inputArray2(len);
+            for (size_t j = 0; j < len; j++) {
+                // TODO Apply 500Hz bandpass for aspirate
+                inputArray1[j] = (static_cast<double>(std::rand()) / RAND_MAX) * 2. - 1.;
+                // TODO Apply 1000Hz bandpass for fricative
+                inputArray2[j] = (static_cast<double>(std::rand()) / RAND_MAX) * 2. - 1.;
+            }
+            for (size_t j = 0; j < len; j++) {
+                double lambda1 = static_cast<double>(j) / len;
+                double lambda2 = (j + 0.5) / len;
+                double glottalOutput = glottis_.runStep(lambda1, inputArray1[j]);
+
+                double vocalOutput = 0;
+                // Tract runs at twice the sample rate 
+                tract_.runStep(glottalOutput, inputArray2[j], lambda1);
+                vocalOutput += tract_.lipOutput() + tract_.noseOutput();
+                tract_.runStep(glottalOutput, inputArray2[j], lambda2);
+                vocalOutput += tract_.lipOutput() + tract_.noseOutput();
+                outArray[j] = vocalOutput * 0.125;
+            }
+            glottis_.finishBlock();
+            tract_.finishBlock();
+        }
+
+        void startSound()
+        {
+        }
+
+        void started(bool value) { started_ = value; }
+        bool started() const { return started_; }
+    private:
+        Glottis& glottis_;
+        Tract& tract_;
+        bool started_;
     };
 
     class TractUI {
@@ -625,15 +692,20 @@ namespace pinktrombone
         {
 
         }
-        double getIndex(int x, int y)
+        double getIndex(int x, int y) const
         {
             return static_cast<double>(tract.n() * (x - tractRect.x)) / tractRect.w;
         }
 
-        double getDiameter(int x, int y)
+        double getDiameter(int x, int y) const
         {
             double v = static_cast<double>(y - (tractRect.y + (tractRect.h - 10) / 2 + 10));
             return static_cast<double>(v) * (tract.n() * stepLength) / tractRect.w;
+        }
+
+        void drawPitchControl(SDL_Renderer* renderer)
+        {
+
         }
 
         void setRestDiameter()
@@ -679,12 +751,12 @@ namespace pinktrombone
                 double index = touch.index;
                 double diameter = touch.diameter;
                 double fromPoint = (outerTongueControlRadius - diameter) / (outerTongueControlRadius - innerTongueControlRadius);
-                fromPoint = clamp(fromPoint, 0., 1.);
+                fromPoint = math::clamp(fromPoint, 0., 1.);
                 fromPoint = std::pow(fromPoint, 0.58) - 0.2 * (fromPoint * fromPoint - fromPoint); //horrible kludge to fit curve to straight line
-                tongueDiameter = clamp(diameter, innerTongueControlRadius, outerTongueControlRadius);
+                tongueDiameter = math::clamp(diameter, innerTongueControlRadius, outerTongueControlRadius);
                 //tongueIndex = Math.clamp(index, tongueLowerIndexBound, tongueUpperIndexBound);
                 double out = fromPoint * 0.5 * (tongueUpperIndexBound - tongueLowerIndexBound);
-                tongueIndex = clamp(index, tongueIndexCentre - out, tongueIndexCentre + out);
+                tongueIndex = math::clamp(index, tongueIndexCentre - out, tongueIndexCentre + out);
             }
 
             setRestDiameter();
@@ -775,6 +847,8 @@ namespace pinktrombone
                 SDL_RenderFillRect(renderer, &rect);
             }
 
+            drawPitchControl(renderer);
+
             SDL_RenderPresent(renderer);
         }
 
@@ -796,48 +870,55 @@ namespace pinktrombone
     class UI
     {
     public:
-        UI() : glottis{}, tract{ glottis }, tractUI{ tract }
+        UI() : glottis_{}, tract_{ glottis_ }, tractUI_{ tract_ }, audioSystem_{glottis_, tract_}
+        {
+        }
+
+        void draw(SDL_Renderer* renderer)
         {
         }
 
         void startMouse(const SDL_MouseButtonEvent* event)
         {
-#if 0
-            if (!AudioSystem.started)
+            if (!audioSystem_.started())
             {
-                AudioSystem.started = true;
-                AudioSystem.startSound();
+                audioSystem_.started(true);
+                audioSystem_.startSound();
             }
-#endif
+
             Touch touch = {};
             touch.startTime = std::clock() / static_cast<double>(CLOCKS_PER_SEC);
             touch.fricative_intensity = 0.;
             touch.endTime = 0.;
             touch.alive = true;
             touch.id = "mouse" + std::to_string(std::rand());
-            touch.index = tractUI.getIndex(event->x, event->y);
-            touch.diameter = tractUI.getDiameter(event->x, event->y);
-            mouseTouch = touch.id;
-            touchesWithMouse[touch.id] = touch;
+            touch.x = event->x;
+            touch.y = event->y;
+            touch.index = tractUI_.getIndex(event->x, event->y);
+            touch.diameter = tractUI_.getDiameter(event->x, event->y);
+            mouseTouch_ = touch.id;
+            touchesWithMouse_[touch.id] = touch;
             handleTouches();
         }
 
         void moveMouse(const SDL_MouseMotionEvent* event)
         {
-            if (mouseTouch.empty()) return;
-            auto& touch = touchesWithMouse.at(mouseTouch);
+            if (mouseTouch_.empty()) return;
+            auto& touch = touchesWithMouse_.at(mouseTouch_);
             if (!touch.alive) return;
-            touch.index = tractUI.getIndex(event->x, event->y);
-            touch.diameter = tractUI.getDiameter(event->x, event->y);
+            touch.x = event->x;
+            touch.y = event->y;
+            touch.index = tractUI_.getIndex(event->x, event->y);
+            touch.diameter = tractUI_.getDiameter(event->x, event->y);
             handleTouches();
         }
 
         void endMouse(const SDL_MouseButtonEvent* event)
         {
-            if (mouseTouch.empty()) return;
+            if (mouseTouch_.empty()) return;
             double time = std::clock() / static_cast<double>(CLOCKS_PER_SEC);
-            auto& touch = touchesWithMouse.at(mouseTouch);
-            mouseTouch = "";
+            auto& touch = touchesWithMouse_.at(mouseTouch_);
+            mouseTouch_ = "";
             if (!touch.alive) return;
             touch.alive = false;
             touch.endTime = time;
@@ -846,40 +927,46 @@ namespace pinktrombone
 
         void handleTouches()
         {
-            tractUI.handleTouches(touchesWithMouse);
-            glottis.handleTouches(touchesWithMouse);
+            tractUI_.handleTouches(touchesWithMouse_);
+            glottis_.handleTouches(touchesWithMouse_);
         }
 
         void updateTouches()
         {
             double time = std::clock() / static_cast<double>(CLOCKS_PER_SEC);
             double fricativeAttackTime = 0.1;
-            for (auto it = touchesWithMouse.begin(); it != touchesWithMouse.end();)
+            for (auto it = touchesWithMouse_.begin(); it != touchesWithMouse_.end();)
             {
                 auto& touch = it->second;
                 if (!(touch.alive) && (time > touch.endTime + 1))
                 {
-                    it = touchesWithMouse.erase(it);
+                    it = touchesWithMouse_.erase(it);
                 }
                 else if (touch.alive)
                 {
                     ++it;
                     std::cout << touch.fricative_intensity << std::endl;
-                    touch.fricative_intensity = clamp((time - touch.startTime) / fricativeAttackTime, 0., 1.);
+                    touch.fricative_intensity = math::clamp((time - touch.startTime) / fricativeAttackTime, 0., 1.);
                 }
                 else
                 {
                     ++it;
                     std::cout << touch.fricative_intensity << std::endl;
-                    touch.fricative_intensity = clamp(1 - (time - touch.endTime) / fricativeAttackTime, 0., 1.);
+                    touch.fricative_intensity = math::clamp(1 - (time - touch.endTime) / fricativeAttackTime, 0., 1.);
                 }
             }
         }
+        Glottis& glottis() { return glottis_; }
+        Tract& tract() { return tract_; }
+        TractUI& tractUI() { return tractUI_; }
+        AudioSystem& audioSystem() { return audioSystem_; }
 
-        Glottis glottis;
-        Tract tract;
-        TractUI tractUI;
-        std::map<std::string, Touch> touchesWithMouse;
-        std::string mouseTouch;
+    private:
+        Glottis glottis_;
+        Tract tract_;
+        TractUI tractUI_;
+        AudioSystem audioSystem_;
+        std::map<std::string, Touch> touchesWithMouse_;
+        std::string mouseTouch_;
     };
 }
