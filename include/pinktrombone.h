@@ -314,51 +314,6 @@ namespace pinktrombone
             double exponent;
         };
 
-        const Glottis& glottis_;
-        int n_ = 44;
-        int bladeStart_ = 10;
-        int tipStart_ = 32;
-        int lipStart_ = 39;
-        std::vector<double> R_; //component going right
-        std::vector<double> L_; //component going left
-        std::vector<double> reflection_;
-        std::vector<double> newReflection_;
-        std::vector<double> junctionOutputR_;
-        std::vector<double> junctionOutputL_;
-        std::vector<double> maxAmplitude_;
-        std::vector<double> diameter_;
-        std::vector<double> restDiameter_;
-        std::vector<double> targetDiameter_;
-        std::vector<double> newDiameter_;
-        std::vector<double> A_;
-        double glottalReflection_ = 0.75;
-        double lipReflection_ = -0.85;
-        int lastObstruction_ = -1;
-        double fade_ = 1.0; //0.9999;
-        double movementSpeed_ = 15; //cm per second
-        std::vector<Transient> transients_;
-        double lipOutput_ = 0.;
-        double noseOutput_ = 0.;
-        double velumTarget_ = 0.01;
-
-        int noseLength_;
-        int noseStart_;
-        std::vector<double> noseR_;
-        std::vector<double> noseL_;
-        std::vector<double> noseJunctionOutputR_;
-        std::vector<double> noseJunctionOutputL_;
-        std::vector<double> noseReflection_;
-        std::vector<double> noseDiameter_;
-        std::vector<double> noseA_;
-        std::vector<double> noseMaxAmplitude_;
-
-        double newReflectionLeft_;
-        double newReflectionRight_;
-        double newReflectionNose_;
-        double reflectionLeft_;
-        double reflectionRight_;
-        double reflectionNose_;
-
     public:
         Tract(const Glottis& glottis) : glottis_(glottis)
         {
@@ -426,6 +381,7 @@ namespace pinktrombone
         const std::vector<double>& noseDiameter() const { return noseDiameter_; }
         void velumTarget(double value) { velumTarget_ = value; }
 
+    private:
         void reshapeTract(double deltaTime)
         {
             double amount = deltaTime * movementSpeed_;
@@ -489,6 +445,7 @@ namespace pinktrombone
             }
         }
 
+    public:
         void runStep(double glottalOutput, double turbulenceNoise, double lambda)
         {
             auto updateAmplitudes = (static_cast<double>(std::rand()) / RAND_MAX < 0.1);
@@ -571,6 +528,7 @@ namespace pinktrombone
             reshapeTract(blockTime);
             calculateReflections();
         }
+    private:
 
         void addTransient(int position)
         {
@@ -606,10 +564,7 @@ namespace pinktrombone
             }
         }
 
-        double turbulenceIntensity_ = 0.;
-        double turbulenceIndex_ = 0.;
-        double turbulenceDiameter_ = 0.;
-
+    public:
         void turbulanceNoise(double intensity, double index, double diameter)
         {
             turbulenceIntensity_ = intensity;
@@ -617,6 +572,7 @@ namespace pinktrombone
             turbulenceDiameter_ = diameter;
         }
 
+    private:
         void addTurbulenceNoise(double turbulenceNoise)
         {
             if (turbulenceIntensity_ == 0) return;
@@ -643,6 +599,56 @@ namespace pinktrombone
                 L_[i + 2] += noise1 / 2;
             }
         }
+
+    private:
+        const Glottis& glottis_;
+        int n_ = 44;
+        int bladeStart_ = 10;
+        int tipStart_ = 32;
+        int lipStart_ = 39;
+        std::vector<double> R_; //component going right
+        std::vector<double> L_; //component going left
+        std::vector<double> reflection_;
+        std::vector<double> newReflection_;
+        std::vector<double> junctionOutputR_;
+        std::vector<double> junctionOutputL_;
+        std::vector<double> maxAmplitude_;
+        std::vector<double> diameter_;
+        std::vector<double> restDiameter_;
+        std::vector<double> targetDiameter_;
+        std::vector<double> newDiameter_;
+        std::vector<double> A_;
+        double glottalReflection_ = 0.75;
+        double lipReflection_ = -0.85;
+        int lastObstruction_ = -1;
+        double fade_ = 1.0; //0.9999;
+        double movementSpeed_ = 15; //cm per second
+        std::vector<Transient> transients_;
+        double lipOutput_ = 0.;
+        double noseOutput_ = 0.;
+        double velumTarget_ = 0.01;
+
+        int noseLength_;
+        int noseStart_;
+        std::vector<double> noseR_;
+        std::vector<double> noseL_;
+        std::vector<double> noseJunctionOutputR_;
+        std::vector<double> noseJunctionOutputL_;
+        std::vector<double> noseReflection_;
+        std::vector<double> noseDiameter_;
+        std::vector<double> noseA_;
+        std::vector<double> noseMaxAmplitude_;
+
+        double newReflectionLeft_;
+        double newReflectionRight_;
+        double newReflectionNose_;
+        double reflectionLeft_;
+        double reflectionRight_;
+        double reflectionNose_;
+
+        double turbulenceIntensity_ = 0.;
+        double turbulenceIndex_ = 0.;
+        double turbulenceDiameter_ = 0.;
     };
 
     class AudioSystem
@@ -695,19 +701,19 @@ namespace pinktrombone
 
     class TractUI {
     public:
-        TractUI(Tract& tract) : tract{ tract }
+        TractUI(Tract& tract) : tract_{ tract }
         {
 
         }
         double getIndex(int x, int y) const
         {
-            return static_cast<double>(tract.n() * (x - tractRect.x)) / tractRect.w;
+            return static_cast<double>(tract_.n() * (x - tractRect_.x)) / tractRect_.w;
         }
 
         double getDiameter(int x, int y) const
         {
-            double v = static_cast<double>(y - (tractRect.y + (tractRect.h - 10) / 2 + 10));
-            return static_cast<double>(v) * (tract.n() * stepLength) / tractRect.w;
+            double v = static_cast<double>(y - (tractRect_.y + (tractRect_.h - 10) / 2 + 10));
+            return static_cast<double>(v) * (tract_.n() * stepLength_) / tractRect_.w;
         }
 
         void drawPitchControl(SDL_Renderer* renderer)
@@ -717,14 +723,14 @@ namespace pinktrombone
 
         void setRestDiameter()
         {
-            auto& restDiameter = tract.restDiameter();
-            for (int i = tract.bladeStart(); i < tract.lipStart(); i++)
+            auto& restDiameter = tract_.restDiameter();
+            for (int i = tract_.bladeStart(); i < tract_.lipStart(); i++)
             {
-                double t = 1.1 * M_PI * (tongueIndex - i) / (tract.tipStart() - tract.bladeStart());
-                double fixedTongueDiameter = 2 + (tongueDiameter - 2) / 1.5;
-                double curve = (1.5 - fixedTongueDiameter + gridOffset) * std::cos(t);
-                if (i == tract.bladeStart() - 2 || i == tract.lipStart() - 1) curve *= 0.8;
-                if (i == tract.bladeStart() || i == tract.lipStart() - 2) curve *= 0.94;
+                double t = 1.1 * M_PI * (tongueIndex_ - i) / (tract_.tipStart() - tract_.bladeStart());
+                double fixedTongueDiameter = 2 + (tongueDiameter_ - 2) / 1.5;
+                double curve = (1.5 - fixedTongueDiameter + gridOffset_) * std::cos(t);
+                if (i == tract_.bladeStart() - 2 || i == tract_.lipStart() - 1) curve *= 0.8;
+                if (i == tract_.bladeStart() || i == tract_.lipStart() - 2) curve *= 0.94;
                 restDiameter[i] = 1.5 - curve;
             }
         }
@@ -732,11 +738,11 @@ namespace pinktrombone
         void handleTouches(std::map<std::string, Touch>& touchesWithMouse)
         {
 
-            double tongueIndexCentre = 0.5 * (tongueLowerIndexBound + tongueUpperIndexBound);
+            double tongueIndexCentre = 0.5 * (tongueLowerIndexBound_ + tongueUpperIndexBound_);
 
-            if (!tongueTouch.empty() && !touchesWithMouse[tongueTouch].alive) tongueTouch = "";
+            if (!tongueTouch_.empty() && !touchesWithMouse[tongueTouch_].alive) tongueTouch_ = "";
 
-            if (tongueTouch.empty()) {
+            if (tongueTouch_.empty()) {
                 for (auto it = touchesWithMouse.begin(); it != touchesWithMouse.end(); ++it)
                 {
                     auto& touch = it->second;
@@ -744,65 +750,65 @@ namespace pinktrombone
                     if (touch.fricative_intensity == 1.) continue; //only new touches will pass this
                     double index = touch.index;
                     double diameter = touch.diameter;
-                    if (index >= tongueLowerIndexBound - 4 && index <= tongueUpperIndexBound + 4
-                        && diameter >= innerTongueControlRadius - 0.5 && diameter <= outerTongueControlRadius + 0.5)
+                    if (index >= tongueLowerIndexBound_ - 4 && index <= tongueUpperIndexBound_ + 4
+                        && diameter >= innerTongueControlRadius_ - 0.5 && diameter <= outerTongueControlRadius_ + 0.5)
                     {
-                        tongueTouch = touch.id;
+                        tongueTouch_ = touch.id;
                     }
                 }
             }
 
-            if (!tongueTouch.empty())
+            if (!tongueTouch_.empty())
             {
-                auto& touch = touchesWithMouse.at(tongueTouch);
+                auto& touch = touchesWithMouse.at(tongueTouch_);
                 double index = touch.index;
                 double diameter = touch.diameter;
-                double fromPoint = (outerTongueControlRadius - diameter) / (outerTongueControlRadius - innerTongueControlRadius);
+                double fromPoint = (outerTongueControlRadius_ - diameter) / (outerTongueControlRadius_ - innerTongueControlRadius_);
                 fromPoint = math::clamp(fromPoint, 0., 1.);
                 fromPoint = std::pow(fromPoint, 0.58) - 0.2 * (fromPoint * fromPoint - fromPoint); //horrible kludge to fit curve to straight line
-                tongueDiameter = math::clamp(diameter, innerTongueControlRadius, outerTongueControlRadius);
+                tongueDiameter_ = math::clamp(diameter, innerTongueControlRadius_, outerTongueControlRadius_);
                 //tongueIndex = Math.clamp(index, tongueLowerIndexBound, tongueUpperIndexBound);
-                double out = fromPoint * 0.5 * (tongueUpperIndexBound - tongueLowerIndexBound);
-                tongueIndex = math::clamp(index, tongueIndexCentre - out, tongueIndexCentre + out);
+                double out = fromPoint * 0.5 * (tongueUpperIndexBound_ - tongueLowerIndexBound_);
+                tongueIndex_ = math::clamp(index, tongueIndexCentre - out, tongueIndexCentre + out);
             }
 
             setRestDiameter();
-            tract.targetDiameter() = tract.restDiameter();
+            tract_.targetDiameter() = tract_.restDiameter();
 
             //other constrictions and nose
-            tract.velumTarget(0.01);
+            tract_.velumTarget(0.01);
             for (auto it = touchesWithMouse.begin(); it != touchesWithMouse.end(); ++it)
             {
                 auto& touch = it->second;
                 if (!touch.alive) continue;
                 double index = touch.index;
                 double diameter = touch.diameter;
-                if (index > tract.noseStart() && diameter < -noseOffset)
+                if (index > tract_.noseStart() && diameter < -noseOffset_)
                 {
-                    tract.velumTarget(0.4);
+                    tract_.velumTarget(0.4);
                 }
-                if (diameter < -0.85 - noseOffset) continue;
+                if (diameter < -0.85 - noseOffset_) continue;
                 diameter -= 0.3;
                 if (diameter < 0) diameter = 0;
                 double width = 2.;
                 if (index < 25) width = 10;
-                else if (index >= tract.tipStart()) width = 5;
-                else width = 10 - 5 * (index - 25) / (tract.tipStart() - 25);
-                if (index >= 2 && index < tract.n() && diameter < 3)
+                else if (index >= tract_.tipStart()) width = 5;
+                else width = 10 - 5 * (index - 25) / (tract_.tipStart() - 25);
+                if (index >= 2 && index < tract_.n() && diameter < 3)
                 {
                     int intIndex = static_cast<int>(std::round(index));
                     for (int i = -static_cast<int>(std::ceil(width)) - 1; i < width + 1; i++)
                     {
-                        if (intIndex + i < 0 || intIndex + i >= tract.n()) continue;
+                        if (intIndex + i < 0 || intIndex + i >= tract_.n()) continue;
                         double relpos = (intIndex + i) - index;
                         relpos = std::abs(relpos) - 0.5;
                         double shrink;
                         if (relpos <= 0) shrink = 0;
                         else if (relpos > width) shrink = 1;
                         else shrink = 0.5 * (1 - std::cos(M_PI * relpos / width));
-                        if (diameter < tract.targetDiameter()[intIndex + i])
+                        if (diameter < tract_.targetDiameter()[intIndex + i])
                         {
-                            tract.targetDiameter()[intIndex + i] = diameter + (tract.targetDiameter()[intIndex + i] - diameter) * shrink;
+                            tract_.targetDiameter()[intIndex + i] = diameter + (tract_.targetDiameter()[intIndex + i] - diameter) * shrink;
                         }
                     }
                 }
@@ -812,9 +818,9 @@ namespace pinktrombone
             for (auto it = touchesWithMouse.begin(); it != touchesWithMouse.end(); ++it)
             {
                 auto& touch = it->second;
-                if (touch.index<2 || touch.index>tract.n()) continue;
+                if (touch.index<2 || touch.index>tract_.n()) continue;
                 if (touch.diameter <= 0) continue;
-                tract.turbulanceNoise(touch.fricative_intensity, touch.index, touch.diameter);
+                tract_.turbulanceNoise(touch.fricative_intensity, touch.index, touch.diameter);
             }
         }
 
@@ -823,32 +829,32 @@ namespace pinktrombone
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            auto& diameter = tract.diameter();
+            auto& diameter = tract_.diameter();
             for (size_t i = 0; i < diameter.size(); i++) {
-                if (i == tract.noseStart()) {
+                if (i == tract_.noseStart()) {
                     SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
                 }
                 else {
                     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
                 }
-                const double v = diameter[i] * tractRect.w / (diameter.size() * stepLength);
+                const double v = diameter[i] * tractRect_.w / (diameter.size() * stepLength_);
                 SDL_Rect rect{
-                    static_cast<int>(tractRect.x + tractRect.w * i / diameter.size()),
-                    tractRect.y + (tractRect.h - 10) / 2 + 10,
-                    static_cast<int>(tractRect.w * (i + 1) / diameter.size() - tractRect.w * i / diameter.size()),
+                    static_cast<int>(tractRect_.x + tractRect_.w * i / diameter.size()),
+                    tractRect_.y + (tractRect_.h - 10) / 2 + 10,
+                    static_cast<int>(tractRect_.w * (i + 1) / diameter.size() - tractRect_.w * i / diameter.size()),
                     static_cast<int>(v)
                 };
                 SDL_RenderFillRect(renderer, &rect);
             }
 
-            auto noseDiameter = tract.noseDiameter();
+            auto noseDiameter = tract_.noseDiameter();
             for (int i = 0; i < noseDiameter.size(); i++) {
                 SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-                const double v = noseDiameter[i] * tractRect.w / (diameter.size() * stepLength);
+                const double v = noseDiameter[i] * tractRect_.w / (diameter.size() * stepLength_);
                 SDL_Rect rect{
-                    static_cast<int>(tractRect.x + tractRect.w * (tract.noseStart() + i) / diameter.size()),
-                    tractRect.y + (tractRect.h - 10) / 2 - static_cast<int>(v),
-                    static_cast<int>(tractRect.w * (tract.noseStart() + i + 1) / diameter.size() - tractRect.w * (tract.noseStart() + i) / diameter.size()),
+                    static_cast<int>(tractRect_.x + tractRect_.w * (tract_.noseStart() + i) / diameter.size()),
+                    tractRect_.y + (tractRect_.h - 10) / 2 - static_cast<int>(v),
+                    static_cast<int>(tractRect_.w * (tract_.noseStart() + i + 1) / diameter.size() - tractRect_.w * (tract_.noseStart() + i) / diameter.size()),
                     static_cast<int>(v)
                 };
                 SDL_RenderFillRect(renderer, &rect);
@@ -860,18 +866,18 @@ namespace pinktrombone
         }
 
     private:
-        Tract& tract;
-        const double innerTongueControlRadius = 2.05;
-        const double outerTongueControlRadius = 3.5;
-        const double tongueLowerIndexBound = tract.bladeStart() + 2;
-        const double tongueUpperIndexBound = tract.tipStart() - 3;
-        SDL_Rect tractRect{ 20, 20, 600, 200 };
-        std::string tongueTouch;
-        double tongueIndex = (tongueLowerIndexBound + tongueUpperIndexBound) / 2.;
-        double tongueDiameter = (innerTongueControlRadius + outerTongueControlRadius) / 2.;
-        double gridOffset = 1.7;
-        double noseOffset = 0.8;
-        const double stepLength = 0.397;
+        Tract& tract_;
+        const double innerTongueControlRadius_ = 2.05;
+        const double outerTongueControlRadius_ = 3.5;
+        const double tongueLowerIndexBound_ = tract_.bladeStart() + 2;
+        const double tongueUpperIndexBound_ = tract_.tipStart() - 3;
+        SDL_Rect tractRect_{ 20, 20, 600, 200 };
+        std::string tongueTouch_;
+        double tongueIndex_ = (tongueLowerIndexBound_ + tongueUpperIndexBound_) / 2.;
+        double tongueDiameter_ = (innerTongueControlRadius_ + outerTongueControlRadius_) / 2.;
+        double gridOffset_ = 1.7;
+        double noseOffset_ = 0.8;
+        const double stepLength_ = 0.397;
     };
 
     class UI
