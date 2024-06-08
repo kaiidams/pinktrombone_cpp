@@ -550,10 +550,10 @@ namespace pinktrombone
 
         void processTransients()
         {
-            for (auto i = 0; i < transients_.size(); i++)
+            for (auto it = transients_.begin(); it != transients_.end(); ++it)
             {
-                auto trans = transients_[i];
-                auto amplitude = trans.strength * std::pow(2, -trans.exponent * trans.timeAlive);
+                auto& trans = *it;
+                double amplitude = trans.strength * std::pow(2, -trans.exponent * trans.timeAlive);
                 R_[trans.position] += amplitude / 2;
                 L_[trans.position] += amplitude / 2;
                 trans.timeAlive += 1.0 / (sampleRate * 2);
