@@ -16,12 +16,10 @@
  *
  */
 
-#include "pch.h"
-#include <cmath>
 #include <vector>
-#include <cmath>
 #include <array>
 #include <ctime>
+#include <cmath>
 
 namespace pinktrombone::noise
 {
