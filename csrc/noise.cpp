@@ -16,8 +16,8 @@
  *
  */
 
-#include "pch.h"
 #include <vector>
+#include <cmath>
 #include <array>
 #include <ctime>
 
