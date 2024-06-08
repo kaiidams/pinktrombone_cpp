@@ -663,7 +663,10 @@ namespace pinktrombone
     class AudioSystem
     {
     public:
-        AudioSystem(Glottis& glottis, Tract& tract) : glottis_{ glottis }, tract_{ tract }, started_{ false } {}
+        AudioSystem(Glottis& glottis, Tract& tract) : glottis_{ glottis }, tract_{ tract }, started_{ false }
+        {
+            blockTime_ = static_cast<double>(blockLength_) / sampleRate;
+        }
 
         void process(double lambda, size_t len, double* out)
         {

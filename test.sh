@@ -1,1 +1,1 @@
-gcc -Iinclude test.cpp src/noise.cpp -o test -lstdc++ -lm && ./test
+gcc -Iinclude -O2 test.cpp src/noise.cpp -o test -lstdc++ -lm && ./test
