@@ -11,12 +11,16 @@ with open('dump.bin', 'rb') as fp:
     data = x[:, 1:].astype(np.float64)
 
 pt = PinkTrombone(N)
-out = []
-for i in range(data.shape[0]):
-    x = data[i, :N]
-    pt.control(x)
-    y = pt.process()
-    out.append(y)
-out = np.concatenate(out)
+if True:
+    out = pt(data)
+    assert out.shape[0] == data.shape[0] * 512
+else:
+    out = []
+    for i in range(data.shape[0]):
+        x = data[i, :N]
+        pt.control(x)
+        y = pt.process()
+        out.append(y)
+    out = np.concatenate(out)
 print(out.shape)
 sf.write("output.wav", out, samplerate=44100)

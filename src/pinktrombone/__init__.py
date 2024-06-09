@@ -4,7 +4,11 @@ import numpy as np
 
 class PinkTrombone:
     def __init__(self, n):
-        self._pinktrombone = _PinkTrombone(n)
+        self.n = n
+        self.reset()
+
+    def reset(self):
+        self._pinktrombone = _PinkTrombone(self.n)
 
     def control(self, data):
         if not isinstance(data, np.ndarray):
@@ -14,3 +18,13 @@ class PinkTrombone:
     def process(self):
         data = self._pinktrombone.process()
         return np.frombuffer(data, dtype=np.float64)
+
+    def __call__(self, data):
+        if not isinstance(data, np.ndarray):
+            data = np.asarray(data, dtype=np.float64)
+        out = []
+        for x in data:
+            self.control(x)
+            y = self.process()
+            out.append(y)
+        return np.concatenate(out)
