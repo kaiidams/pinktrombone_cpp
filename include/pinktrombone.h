@@ -593,10 +593,18 @@ namespace pinktrombone
         {
 #define TURBULENCE_FROM_DIAMETERS
 #ifdef TURBULENCE_FROM_DIAMETERS
-            auto pos = std::min_element(this->diameter_.begin(), this->diameter_.end());
+            auto pos = std::min_element(diameter_.begin() + bladeStart_, diameter_.end());
             turbulenceIntensity_ = 1.0;
-            turbulenceIndex_ = pos - this->diameter_.begin();
+            int index = static_cast<int>(pos - diameter_.begin());
+            turbulenceIndex_ = static_cast<double>(index);
+            if (index  >= 1 && index + 1 < n_) {
+                double d = (diameter_[index - 1] + diameter_[index] + diameter_[index + 1]);
+                if (d > 0) {
+                    turbulenceIndex_ += (diameter_[index - 1] - diameter_[index + 1]) / d;
+                }
+            }
             turbulenceDiameter_ = *pos + 0.3;
+            // std::cout << turbulenceIndex_ << " " << turbulenceDiameter_ << " " << "\r";
 #endif
             if (turbulenceIntensity_ == 0) return;
             addTurbulenceNoiseAtIndex(0.66 * turbulenceNoise * turbulenceIntensity_, turbulenceIndex_, turbulenceDiameter_);
@@ -616,7 +624,7 @@ namespace pinktrombone
                 R_[i + 1] += noise0 / 2;
                 L_[i + 1] += noise0 / 2;
             }
-            if (i + 1 < R_.size() && i + 2 < L_.size())
+            if (i + 2 < R_.size() && i + 2 < L_.size())
             {
                 R_[i + 2] += noise1 / 2;
                 L_[i + 2] += noise1 / 2;

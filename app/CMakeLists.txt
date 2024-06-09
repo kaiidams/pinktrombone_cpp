@@ -8,13 +8,13 @@ project(pinktrombone_cpp LANGUAGES CXX)
 find_package(SDL2 CONFIG REQUIRED)
 set(VCPKGLIB_BASE_SOURCES)
 add_executable(pinktrombone_cpp
-    src/test.cpp
-    src/noise.cpp
- "include/pinktrombone.h")
-target_precompile_headers(pinktrombone_cpp PRIVATE "include/pch.h")
+    "main.cpp"
+    "../csrc/noise.cpp"
+    "../include/pinktrombone.h")
+target_precompile_headers(pinktrombone_cpp PRIVATE "pch.h")
 add_compile_definitions(USE_SDL)
 
-target_include_directories(pinktrombone_cpp PRIVATE include)
+target_include_directories(pinktrombone_cpp PRIVATE "../include")
 target_link_libraries(pinktrombone_cpp
     PRIVATE
     SDL2::SDL2
