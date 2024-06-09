@@ -593,7 +593,7 @@ namespace pinktrombone
         {
 #define TURBULENCE_FROM_DIAMETERS
 #ifdef TURBULENCE_FROM_DIAMETERS
-            auto& pos = std::min_element(this->diameter_.begin(), this->diameter_.end());
+            auto pos = std::min_element(this->diameter_.begin(), this->diameter_.end());
             turbulenceIntensity_ = 1.0;
             turbulenceIndex_ = pos - this->diameter_.begin();
             turbulenceDiameter_ = *pos + 0.3;
