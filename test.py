@@ -2,17 +2,18 @@ from pinktrombone import PinkTrombone
 import numpy as np
 import soundfile as sf
 
+N = 44
 
 with open('dump.bin', 'rb') as fp:
     x = np.frombuffer(fp.read(), dtype=np.float32)
-    x = x.reshape(-1, 50)
-    assert np.all(x[:, 0] == 50.0)
+    x = x.reshape(-1, N + 6)
+    assert np.all(x[:, 0] == N + 6)
     data = x[:, 1:].astype(np.float64)
 
-pt = PinkTrombone(44)
+pt = PinkTrombone(N)
 out = []
 for i in range(data.shape[0]):
-    x = data[i].tobytes()
+    x = data[i, :N]
     pt.control(x)
     y = pt.process()
     out.append(y)

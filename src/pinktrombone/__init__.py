@@ -7,7 +7,9 @@ class PinkTrombone:
         self._pinktrombone = _PinkTrombone(n)
 
     def control(self, data):
-        self._pinktrombone.control(data)
+        if not isinstance(data, np.ndarray):
+            data = np.asarray(data, dtype=np.float64)
+        self._pinktrombone.control(data.tobytes())
 
     def process(self):
         data = self._pinktrombone.process()

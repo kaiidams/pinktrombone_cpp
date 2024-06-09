@@ -13,7 +13,11 @@ typedef struct {
 static int
 PinkTromboneObject_init(PinkTromboneObject *self, PyObject *args, PyObject *kwds)
 {
-    self->pinktrombone = PinkTrombone_new(44);
+    int n;
+    if (!PyArg_ParseTuple(args, "i", &n)) {
+        return -1;
+    }
+    self->pinktrombone = PinkTrombone_new(n);
     if (self->pinktrombone == NULL) {
         return -1;
     }
