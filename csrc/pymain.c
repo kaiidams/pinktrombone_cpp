@@ -1,13 +1,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
-#include <pinktrombone.h>
 #include <stdio.h>
-
-
-class PinkTrombone {
-    pinktrombone::Glottis glottis_;
-    pinktrombone::Tract tract_;
-};
+#include "capi.h"
 
 
 typedef struct {
@@ -19,7 +13,7 @@ typedef struct {
 static int
 PinkTromboneObject_init(PinkTromboneObject *self, PyObject *args, PyObject *kwds)
 {
-  self->pinktrombone = new PinkTrombone{};
+  self->pinktrombone = PinkTrombone_new(44);
   if (self->pinktrombone == NULL) {
     return -1;
   }
@@ -31,7 +25,7 @@ static void
 PinkTromboneObject_dealloc(PinkTromboneObject *self)
 {
   if (self->pinktrombone != NULL) {
-    delete self->pinktrombone;
+    PinkTrombone_delete(self->pinktrombone);
     printf("dealloc\n");
     self->pinktrombone = NULL;
   }
@@ -84,6 +78,12 @@ PinkTromboneObject_continue(PinkTromboneObject *self, PyObject *Py_UNUSED(ignore
 }
 #endif
 
+static PyMemberDef PinkTromboneObject_members[] = {
+    // {"servername", (getter) PinkTromboneObject_getservername, (setter) PinkTromboneObject_setservername,
+    //  "server name", NULL},
+    {NULL}  /* Sentinel */
+};
+
 static PyMethodDef PinkTromboneObject_methods[] = {
     // {"connect", (PyCFunction) PinkTromboneObject_connect, METH_NOARGS,
     //  "connect to the server"
@@ -94,24 +94,18 @@ static PyMethodDef PinkTromboneObject_methods[] = {
     {NULL}  /* Sentinel */
 };
 
-static PyGetSetDef PinkTromboneObject_getsetters[] = {
-    // {"servername", (getter) PinkTromboneObject_getservername, (setter) PinkTromboneObject_setservername,
-    //  "server name", NULL},
-    {NULL}  /* Sentinel */
-};
-
 static PyTypeObject PinkTromboneType = {
-  PyVarObject_HEAD_INIT(NULL, 0)
+  .ob_base = PyVarObject_HEAD_INIT(NULL, 0)
   .tp_name = "pinktrombone._PinkTrombone",
-  .tp_doc = PyDoc_STR("Pink Trombone"),
   .tp_basicsize = sizeof(PinkTromboneObject),
   .tp_itemsize = 0,
-  .tp_flags = Py_TPFLAGS_DEFAULT,
-  .tp_new = PyType_GenericNew,
-  .tp_init = (initproc) PinkTromboneObject_init,
   .tp_dealloc = (destructor) PinkTromboneObject_dealloc,
+  .tp_flags = Py_TPFLAGS_DEFAULT,
+  .tp_doc = PyDoc_STR("Pink Trombone"),
   .tp_methods = PinkTromboneObject_methods,
-  .tp_getset = PinkTromboneObject_getsetters
+  .tp_members = PinkTromboneObject_members,
+  .tp_init = (initproc) PinkTromboneObject_init,
+  .tp_new = PyType_GenericNew,
 };
 
 
