@@ -9,7 +9,7 @@ find_package(SDL2 CONFIG REQUIRED)
 set(VCPKGLIB_BASE_SOURCES)
 add_executable(pinktrombone_cpp
     "main.cpp"
-    "../lib/noise.cpp"
+    "../csrc/noise.cpp"
     "../include/pinktrombone.h")
 target_precompile_headers(pinktrombone_cpp PRIVATE "pch.h")
 add_compile_definitions(USE_SDL)
