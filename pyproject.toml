@@ -3,5 +3,5 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pinktrombone"
+name = "voice100-pinktrombone"
 version = "0.1"

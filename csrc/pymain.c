@@ -91,7 +91,7 @@ static PyMethodDef PinkTromboneObject_methods[] = {
 
 static PyTypeObject PinkTromboneType = {
     .ob_base = PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "pinktrombone._PinkTrombone",
+    .tp_name = "voice100_pinktrombone._PinkTrombone",
     .tp_basicsize = sizeof(PinkTromboneObject),
     .tp_itemsize = 0,
     .tp_dealloc = (destructor) PinkTromboneObject_dealloc,
