@@ -75,12 +75,6 @@ PinkTromboneObject_process(PinkTromboneObject *self, PyObject *Py_UNUSED(ignored
     return result;
 }
 
-static PyMemberDef PinkTromboneObject_members[] = {
-    // {"servername", (getter) PinkTromboneObject_getservername, (setter) PinkTromboneObject_setservername,
-    //  "server name", NULL},
-    {NULL}  /* Sentinel */
-};
-
 static PyMethodDef PinkTromboneObject_methods[] = {
     {"control", (PyCFunction) PinkTromboneObject_control, METH_O,
      "set control values"
@@ -100,7 +94,6 @@ static PyTypeObject PinkTromboneType = {
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_doc = PyDoc_STR("Pink Trombone"),
     .tp_methods = PinkTromboneObject_methods,
-    .tp_members = PinkTromboneObject_members,
     .tp_init = (initproc) PinkTromboneObject_init,
     .tp_new = PyType_GenericNew,
 };
