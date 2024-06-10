@@ -5,6 +5,8 @@ import numpy as np
 class PinkTrombone:
     def __init__(self, n):
         self.n = n
+        self.sample_rate = 44100
+        self.block_size = 512
         self.reset()
 
     def reset(self):
