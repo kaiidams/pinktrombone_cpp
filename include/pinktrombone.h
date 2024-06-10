@@ -88,6 +88,20 @@ namespace pinktrombone
             if (current < target) return std::min(current + amountUp, target);
             else return std::max(current - amountDown, target);
         }
+
+        double random()
+        {
+            return static_cast<double>(std::rand()) / RAND_MAX;
+        }
+
+        double gaussian()
+        {
+            double s = 0.;
+            for (int i = 0; i < 16; i++) {
+                s += random();
+            }
+            return (s - 8.) / 4.;
+        }
     }
 
     bool autoWobble = true;
@@ -474,7 +488,7 @@ namespace pinktrombone
     public:
         void runStep(double glottalOutput, double turbulenceNoise, double lambda)
         {
-            bool updateAmplitudes = (static_cast<double>(std::rand()) / RAND_MAX < 0.1);
+            bool updateAmplitudes = math::random() < 0.1;
 
             //mouth
             processTransients();
@@ -698,9 +712,9 @@ namespace pinktrombone
             for (size_t j = 0; j < len; j++)
             {
                 // TODO Apply 500Hz bandpass for aspirate
-                inputArray1[j] = (static_cast<double>(std::rand()) / RAND_MAX) * 2. - 1.;
+                inputArray1[j] = math::gaussian();
                 // TODO Apply 1000Hz bandpass for fricative
-                inputArray2[j] = (static_cast<double>(std::rand()) / RAND_MAX) * 2. - 1.;
+                inputArray2[j] = math::gaussian();
             }
             for (size_t j = 0; j < len; j++)
             {
