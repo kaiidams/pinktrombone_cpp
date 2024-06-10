@@ -9,12 +9,13 @@
 
 using namespace pinktrombone;
 
-// static UI ui{ 35 };
-static UI ui{ 44 };
+static UI ui{ 35 };
+// static UI ui{ 44 };
 static int channels;
 
 void SDLCALL MyAudioCallback(void* userdata, Uint8* stream, int len)
 {
+    alwaysVoice = true;
     // TODO SDL runs on another thread than UI.
     size_t buflen = len / sizeof(float) / channels;
     std::vector<double> buf(buflen);
