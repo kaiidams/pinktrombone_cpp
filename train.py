@@ -636,7 +636,7 @@ class PinkTromboneModel(pl.LightningModule):
                 # x = torch.from_numpy(x.T)
                 # x = x.to(dtype=unnormalized.dtype, device=unnormalized.device)
                 x = generate_random_control(control.shape[2], self.hparams.num_sections)
-                unnormalized[i, :, :] = x
+                unnormalized[i, :, :] = x.T
         with torch.no_grad():
             x = self.articulator(unnormalized)
             f = torch.isnan(x)
