@@ -547,7 +547,7 @@ def dummy_data_(N=44, T=2000, M=100):
     return X
 
 
-def unnormalize_control(inputs):
+def unnormalize_control_(inputs):
     x = torch.transpose(inputs, 1, 2)
     x = x.numpy().astype(np.float64)
     x[:, :, 0] = x[:, :, 0] > 0.0
@@ -632,12 +632,21 @@ class PinkTromboneModel(pl.LightningModule):
         unnormalized = unnormalize_control(control)
         for i in range(control.shape[0]):
             if random.random() < 0.3:
-                x = dummy_data(N=self.hparams.num_sections, T=control.shape[2] + 99, M=100)
-                x = torch.from_numpy(x.T)
-                x = x.to(dtype=unnormalized.dtype, device=unnormalized.device)
+                # x = dummy_data(N=self.hparams.num_sections, T=control.shape[2] + 99, M=100)
+                # x = torch.from_numpy(x.T)
+                # x = x.to(dtype=unnormalized.dtype, device=unnormalized.device)
+                x = generate_random_control(control.shape[2], self.hparams.num_sections)
                 unnormalized[i, :, :] = x
         with torch.no_grad():
             x = self.articulator(unnormalized)
+            f = torch.isnan(x)
+            if np.all(f).item():
+                print('nan')
+                x = np.where(f, x, 0)
+            f = torch.isinf(x)
+            if np.all(f).item():
+                print('inf')
+                x = np.where(f, x, 0)
             x = torchaudio.functional.resample(x, 44100, 22050)
             # x *= 0.95 / torch.max(torch.abs(x), axis=1, keepdim=True).values
             x *= 3.0

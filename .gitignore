@@ -163,3 +163,4 @@ cython_debug/
 
 .vscode
 .vs
+lightning_logs
