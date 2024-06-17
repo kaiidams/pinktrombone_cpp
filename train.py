@@ -463,7 +463,65 @@ class ReconstructionLoss2(nn.Module):
         return loss
 
 
-def dummy_data(N=44, T=2000, M=100):
+def normalize_control(data):
+    return np.concatenate([
+        data[:, 0:1],
+        (data[:, 1:2] - 100.0) / 100.0,
+        data[:, 2:4],
+        data[:, 4:5] / 0.4,
+        (data[:, 5:] + 0.1) / 1.6
+    ], axis=1)
+
+
+def unnormalize_control(data):
+    return np.concatenate([
+        data[:, 0:1],
+        data[:, 1:2] * 100.0 + 100.0,
+        data[:, 2:4],
+        data[:, 4:5] * 0.4,
+        data[:, 5:] * 1.6 - 0.1
+    ], axis=1)
+
+
+def rest_diameter(n: int) -> np.ndarray:
+    diameter = np.arange(n, dtype=np.float64)
+    for i in range(n):
+        if i < 7 * n / 44 - 0.5:
+            diameter[i] = 0.6
+        elif i < 12 * n / 44:
+            diameter[i] = 1.1
+        else:
+            diameter[i] = 1.5
+    return diameter
+
+
+def generate_random_control(T, n, step=20):
+    i = np.arange(n)
+    p = np.random.rand((T + 2 * step - 1) // step, 10)
+    p = np.repeat(p, step, axis=0)
+    p = np.mean(np.stack([p[i:p.shape[0] - 20 + i] for i in range(step)]), axis=0)
+    p = p[:T]
+    d0 = (np.exp(1 - (n - 2 - i[None, :]) ** 2 / 4) / np.exp(1)) * p[:, None, 0]
+    d1 = np.exp(1 - (20 * p[:, None, 2] + 10 - i[None, :]) ** 2 / 200) / np.exp(1) * p[:, None, 1]
+    d2 = np.exp(1 - (10 * p[:, None, 4] + 20 - i[None, :]) ** 2 / 20) / np.exp(1) * p[:, None, 3]
+    x = np.maximum(d0, d1)
+    x = np.maximum(x, d2)
+    x = 1.5 - x * 1.6
+    rd = rest_diameter(n)
+    diameter = np.minimum(x, rd)
+
+    data = np.concatenate([
+        p[:, 5:],
+        diameter
+    ], axis=1)
+    data[:, 0] = data[:, 0] > 0.3
+    data[:, 1] = data[:, 1] * 100 + 100
+    data[:, 4] = np.clip(data[:, 4] * 0.6 - 0.1, 0.01, 0.4)
+
+    return data
+
+
+def dummy_data_(N=44, T=2000, M=100):
     import numpy as np
 
     X = np.random.normal(size=(T, N + 5))
