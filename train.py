@@ -489,7 +489,7 @@ def dummy_data(N=44, T=2000, M=100):
     return X
 
 
-def unnormalize_control(self, inputs):
+def unnormalize_control(inputs):
     x = torch.transpose(inputs, 1, 2)
     x = x.numpy().astype(np.float64)
     x[:, :, 0] = x[:, :, 0] > 0.0
@@ -498,6 +498,7 @@ def unnormalize_control(self, inputs):
     x[:, :, 4] = np.clip(x[:, :, 4] + 0.5, 0.01, 0.2)
     x[:, :, 5:] = np.clip(x[:, :, 5:] * 2.0 + 1.0, 0.0, 3.0)
     x = torch.transpose(torch.from_numpy(x).to(inputs.dtype), 1, 2)
+    return x
 
 
 class PinkTromboneModel(pl.LightningModule):
@@ -512,7 +513,7 @@ class PinkTromboneModel(pl.LightningModule):
         batch_size: int = 32,
         sample_rate: int = 22_050,
         segment_length: int = 32270 * 5,
-        lr: float = 1e-5,
+        lr: float = 1e-4,
         b1: float = 0.5,
         b2: float = 0.9,
         dataset: str = 'librispeech'
@@ -529,7 +530,7 @@ class PinkTromboneModel(pl.LightningModule):
             melkwargs=dict(n_fft=512, hop_length=256, n_mels=80, center=False))
         self.articulator = Articulator(num_sections)
         self.encoder = EncoderDecoder(n_mfcc, self.articulator.input_dim, hidden_dim, padding)
-        self.decoder = EncoderDecoder(self.articulator.input_dim, 1, hidden_dim, padding)
+        self.decoder = EncoderDecoder(self.articulator.input_dim + n_mfcc, 1, hidden_dim, padding)
         self.criterion = nn.MSELoss(reduction="none")
 
     def configure_optimizers(self):
@@ -545,37 +546,6 @@ class PinkTromboneModel(pl.LightningModule):
             lr=lr, betas=(b1, b2))
         return [optimizer_g, optimizer_d], []
 
-    def compute_loss(self, batch):
-        targets = self.transform(batch)
-        control = self.encoder(targets)
-        estimates = self.decoder(control)
-        with torch.no_grad():
-            x = control.detach().clone()
-            for i in range(x.shape[0]):
-                if random.random() < 100: #0.3:
-                    y = dummy_data(N=self.hparams.num_sections, T=x.shape[1])
-                    x[i, :, :] = torch.from_numpy(y).to(x.dtype)
-            x = self.articulator(x)
-            audio = x
-            x = torchaudio.functional.resample(x, 44100, 22050)
-            # x *= 0.95 / torch.max(torch.abs(x), axis=1, keepdim=True).values
-            x *= 3.0
-            outputs = self.transform(x)
-
-        length = min(estimates.shape[2], targets.shape[2])
-        rec_loss = self.criterion(estimates[:, :, :length], targets[:, :, :length])
-
-        estimates = self.decoder(control.detach())
-        length = min(estimates.shape[2], outputs.shape[2])
-        est_loss = self.criterion(estimates[:, :, :length], outputs[:, :, :length])
-
-        return dict(
-            est_loss=est_loss,
-            rec_loss=rec_loss,
-            targets=targets, control=control,
-            estimates=estimates, outputs=outputs,
-            audio=audio)
-
     def training_step(self, batch, batch_idx):
         optimizer_g, optimizer_d = self.optimizers()
         targets = self.transform(batch)
@@ -584,7 +554,8 @@ class PinkTromboneModel(pl.LightningModule):
         # train generator
         self.toggle_optimizer(optimizer_g)
         control = self.encoder(targets)
-        estimates = self.decoder(control)
+        length = min(targets.shape[2], control.shape[2])
+        estimates = self.decoder(torch.concat([control[:, :, :length], targets[:, :, :length]], axis=1))
         # estimates: [batch, 1, sequence]
         # print(input.shape, output.shape)
 
@@ -600,20 +571,22 @@ class PinkTromboneModel(pl.LightningModule):
         self.toggle_optimizer(optimizer_d)
 
         control = control.detach().clone()
+        unnormalized = unnormalize_control(control)
         for i in range(control.shape[0]):
-            if random.random() < 10.3:
+            if random.random() < 0.3:
                 x = dummy_data(N=self.hparams.num_sections, T=control.shape[2] + 99, M=100)
                 x = torch.from_numpy(x.T)
-                x = x.to(dtype=control.dtype, device=control.device)
-                control[i, :, :] = x
+                x = x.to(dtype=unnormalized.dtype, device=unnormalized.device)
+                unnormalized[i, :, :] = x
         with torch.no_grad():
-            x = self.articulator(control)
+            x = self.articulator(unnormalized)
             x = torchaudio.functional.resample(x, 44100, 22050)
             # x *= 0.95 / torch.max(torch.abs(x), axis=1, keepdim=True).values
             x *= 3.0
             outputs = self.transform(x)
 
-        estimates = self.decoder(control)
+        length = min(targets.shape[2], control.shape[2])
+        estimates = self.decoder(torch.concat([control[:, :, :length], targets[:, :, :length]], axis=1))
 
         length = min(outputs.shape[2], targets.shape[2])
         length = min(estimates.shape[2], length)
@@ -621,7 +594,7 @@ class PinkTromboneModel(pl.LightningModule):
         error = torch.mean(error, axis=1, keepdim=True)
 
         d_loss = self.criterion(estimates[:, :, :length], error)
-        d_loss = torch.mean(d_loss) * 1e-4
+        d_loss = torch.mean(d_loss) * 1e-5
         self.log("d_loss", d_loss, prog_bar=True)
 
         self.manual_backward(d_loss)
