@@ -464,7 +464,7 @@ class ReconstructionLoss2(nn.Module):
 
 
 def normalize_control(data):
-    return np.concatenate([
+    return torch.concat([
         data[:, 0:1],
         (data[:, 1:2] - 100.0) / 100.0,
         data[:, 2:4],
@@ -474,7 +474,7 @@ def normalize_control(data):
 
 
 def unnormalize_control(data):
-    return np.concatenate([
+    return torch.concat([
         data[:, 0:1],
         data[:, 1:2] * 100.0 + 100.0,
         data[:, 2:4],
@@ -495,7 +495,7 @@ def rest_diameter(n: int) -> np.ndarray:
     return diameter
 
 
-def generate_random_control(T, n, step=20):
+def generate_random_control(T: int, n: int, step: int = 20) -> np.ndarray:
     i = np.arange(n)
     p = np.random.rand((T + 2 * step - 1) // step, 10)
     p = np.repeat(p, step, axis=0)
@@ -628,25 +628,24 @@ class PinkTromboneModel(pl.LightningModule):
         # train discriminator
         self.toggle_optimizer(optimizer_d)
 
-        control = control.detach().clone()
-        unnormalized = unnormalize_control(control)
-        for i in range(control.shape[0]):
-            if random.random() < 0.3:
-                # x = dummy_data(N=self.hparams.num_sections, T=control.shape[2] + 99, M=100)
-                # x = torch.from_numpy(x.T)
-                # x = x.to(dtype=unnormalized.dtype, device=unnormalized.device)
-                x = generate_random_control(control.shape[2], self.hparams.num_sections)
-                unnormalized[i, :, :] = x.T
         with torch.no_grad():
+            control = control.detach().clone()
+            unnormalized = unnormalize_control(control)
+            for i in range(control.shape[0]):
+                if random.random() < 0.3:
+                    # x = dummy_data(N=self.hparams.num_sections, T=control.shape[2] + 99, M=100)
+                    # x = torch.from_numpy(x.T)
+                    # x = x.to(dtype=unnormalized.dtype, device=unnormalized.device)
+                    x = generate_random_control(control.shape[2], self.hparams.num_sections)
+                    unnormalized[i, :, :] = torch.from_numpy(x.T).to(device=unnormalized.device, dtype=unnormalized.dtype)
             x = self.articulator(unnormalized)
             f = torch.isnan(x)
-            if np.all(f).item():
-                print('nan')
-                x = np.where(f, x, 0)
+            if torch.any(f).item():
+                x = torch.where(f, 0, x)
             f = torch.isinf(x)
-            if np.all(f).item():
+            if torch.any(f).item():
                 print('inf')
-                x = np.where(f, x, 0)
+                x = torch.where(f, 0, x)
             x = torchaudio.functional.resample(x, 44100, 22050)
             # x *= 0.95 / torch.max(torch.abs(x), axis=1, keepdim=True).values
             x *= 3.0
