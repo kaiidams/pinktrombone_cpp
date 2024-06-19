@@ -16,7 +16,6 @@ except ImportError:
 
         class Callback:
             pass
-from itertools import chain
 import random
 import numpy as np
 
@@ -629,7 +628,7 @@ class PinkTromboneModel(pl.LightningModule):
         # train generator
         self.toggle_optimizer(optimizer_g)
         control = self.encoder(targets)
-        control = torch.tanh(control)
+        control = torch.sigmoid(control)
         length = min(targets.shape[2], control.shape[2])
         estimates = self.decoder(torch.concat([control[:, :, :length], targets[:, :, :length]], axis=1))
         # estimates: [batch, 1, sequence]
@@ -647,21 +646,21 @@ class PinkTromboneModel(pl.LightningModule):
         self.toggle_optimizer(optimizer_d)
 
         with torch.no_grad():
-            control = control.detach().clone()
+            control = control.detach()
             unnormalized = unnormalize_control(control)
             x = self.articulator(unnormalized)
             outputs = self.transform(x * self.running_std[0] / self.running_std[1])
 
+            length = min(outputs.shape[2], targets.shape[2])
+            error = self.criterion(outputs[:, :, :length], targets[:, :, :length])
+            error = torch.mean(error, axis=1, keepdim=True)
+            self.log("error", torch.mean(error), prog_bar=True)
+
         length = min(targets.shape[2], control.shape[2])
         estimates = self.decoder(torch.concat([control[:, :, :length], targets[:, :, :length]], axis=1))
 
-        length = min(outputs.shape[2], targets.shape[2])
-        length = min(estimates.shape[2], length)
-        error = self.criterion(outputs[:, :, :length], targets[:, :, :length])
-        error = torch.mean(error, axis=1, keepdim=True)
-        self.log("error", torch.mean(error), prog_bar=True)
-
-        d_loss = self.criterion(estimates[:, :, :length], error)
+        length = min(estimates.shape[2], error.shape[2])
+        d_loss = self.criterion(estimates[:, :, :length], error[:, :, :length])
         d_loss = torch.mean(d_loss)
 
         self.log("d_loss", d_loss, prog_bar=True)
@@ -681,15 +680,15 @@ class PinkTromboneModel(pl.LightningModule):
             self.log("o_std", self.running_std[1], prog_bar=True)
             outputs = self.transform(x)
 
+            length = min(outputs.shape[2], targets.shape[2])
+            error = self.criterion(outputs[:, :, :length], targets[:, :, :length])
+            error = torch.mean(error, axis=1, keepdim=True)
+
         length = min(targets.shape[2], control.shape[2])
         estimates = self.decoder(torch.concat([control[:, :, :length], targets[:, :, :length]], axis=1))
 
-        length = min(outputs.shape[2], targets.shape[2])
-        length = min(estimates.shape[2], length)
-        error = self.criterion(outputs[:, :, :length], targets[:, :, :length])
-        error = torch.mean(error, axis=1, keepdim=True)
-
-        f_loss = self.criterion(estimates[:, :, :length], error)
+        length = min(estimates.shape[2], error.shape[2])
+        f_loss = self.criterion(estimates[:, :, :length], error[:, :, :length])
         f_loss = torch.mean(f_loss)
 
         self.log("f_loss", f_loss, prog_bar=True)

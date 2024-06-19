@@ -5,3 +5,6 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "voice100-pinktrombone"
 version = "0.1"
+
+[tool.flake8]
+max-line-length = 180
