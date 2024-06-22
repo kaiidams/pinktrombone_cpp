@@ -119,15 +119,13 @@ class Articulator(nn.Module):
         f = np.isinf(x)
         if np.any(f).item():
             x = np.where(f, 0, x)
-        x = torch.from_numpy(x).to(dtype=inputs.dtype, device=inputs.device)
+        x = torch.from_numpy(x)
         x = torchaudio.functional.resample(x, self.pinktrombone.sample_rate, self.sample_rate)
         if x.shape[1] > output_length:
             x = x[:, :output_length]
         elif x.shape[1] < output_length:
-            print('short1', x.shape)
             x = torch.nn.functional.pad(x, pad=[0, output_length - x.shape[1]])
-            print('short2', x.shape)
-        return x
+        return x.to(dtype=inputs.dtype, device=inputs.device)
 
 
 def normalize_control(data):
@@ -265,7 +263,6 @@ class PinkTromboneModel(pl.LightningModule):
         control = self.encode(targets)
         estimates = self.decode(control, targets)
         # estimates: [batch, 1, sequence]
-        # print(input.shape, output.shape)
 
         g_loss = torch.mean(estimates)
         self.log("g_loss", g_loss, prog_bar=True)
