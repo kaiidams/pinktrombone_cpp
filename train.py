@@ -1,12 +1,10 @@
 # Copyright (C) 2023 Katsuya Iida. All rights reserved.
 
-from typing import Tuple, List, Optional
 from voice100_pinktrombone import PinkTrombone
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchaudio
-from torch.nn import init
 try:
     import pytorch_lightning as pl
 except ImportError:
@@ -16,7 +14,6 @@ except ImportError:
 
         class Callback:
             pass
-import random
 import numpy as np
 
 
@@ -57,66 +54,6 @@ class ResNet1d(nn.Module):
         return x
 
 
-class ResNet2d(nn.Module):
-    def __init__(
-        self,
-        n_channels: int,
-        factor: int,
-        stride: Tuple[int, int]
-    ) -> None:
-        # https://arxiv.org/pdf/2005.00341.pdf
-        # The original paper uses layer normalization, but here
-        # we use batch normalization.
-        super().__init__()
-        self.conv0 = nn.Conv2d(
-            n_channels,
-            n_channels,
-            kernel_size=(3, 3),
-            padding='same')
-        self.bn0 = nn.BatchNorm2d(
-            n_channels
-        )
-        self.conv1 = nn.Conv2d(
-            n_channels,
-            factor * n_channels,
-            kernel_size=(stride[0] + 2, stride[1] + 2),
-            stride=stride)
-        self.bn1 = nn.BatchNorm2d(
-            factor * n_channels
-        )
-        self.conv2 = nn.Conv2d(
-            n_channels,
-            factor * n_channels,
-            kernel_size=1,
-            stride=stride)
-        self.bn2 = nn.BatchNorm2d(
-            factor * n_channels
-        )
-        self.pad = nn.ReflectionPad2d([
-            (stride[1] + 1) // 2,
-            (stride[1] + 2) // 2,
-            (stride[0] + 1) // 2,
-            (stride[0] + 2) // 2,
-        ])
-        self.activation = nn.LeakyReLU(0.3)
-
-    def forward(self, input):
-        x = self.conv0(input)
-        x = self.bn0(x)
-        x = self.activation(x)
-        x = self.pad(x)
-        x = self.conv1(x)
-        x = self.bn1(x)
-
-        # shortcut
-        y = self.conv2(input)
-        y = self.bn2(y)
-
-        x += y
-        x = self.activation(x)
-        return x
-
-
 class EncoderBlock(nn.Module):
     def __init__(
         self,
@@ -136,31 +73,6 @@ class EncoderBlock(nn.Module):
                 padding=(2 * stride) // 2 if padding == 'same' else 0,
                 stride=stride),
             nn.ELU(),
-        )
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return self.layers(input)
-
-
-class DecoderBlock(nn.Module):
-    def __init__(
-        self,
-        n_channels: int,
-        padding: str,
-        stride: int
-    ) -> None:
-        super().__init__()
-        assert padding in ['valid', 'same']
-        self.layers = nn.Sequential(
-            nn.ConvTranspose1d(
-                n_channels, n_channels // 2,
-                kernel_size=2 * stride,
-                padding=(2 * stride) // 2 if padding == 'same' else 0,
-                stride=stride),
-            nn.ELU(),
-            ResNet1d(n_channels // 2, padding=padding, dilation=1),
-            ResNet1d(n_channels // 2, padding=padding, dilation=3),
-            ResNet1d(n_channels // 2, padding=padding, dilation=9),
         )
 
     def forward(self, input: torch.Tensor) -> torch.Tensor:
@@ -194,7 +106,7 @@ class Articulator(nn.Module):
         self.input_dim = num_sections + 5
         self.sample_rate = sample_rate
 
-    def forward(self, inputs: torch.Tensor):
+    def forward(self, inputs: torch.Tensor, output_length: int):
         x = torch.transpose(inputs.detach().cpu(), 1, 2)
         arr = []
         for i in range(x.shape[0]):
@@ -209,267 +121,13 @@ class Articulator(nn.Module):
             x = np.where(f, 0, x)
         x = torch.from_numpy(x).to(dtype=inputs.dtype, device=inputs.device)
         x = torchaudio.functional.resample(x, self.pinktrombone.sample_rate, self.sample_rate)
+        if x.shape[1] > output_length:
+            x = x[:, :output_length]
+        elif x.shape[1] < output_length:
+            print('short1', x.shape)
+            x = torch.nn.functional.pad(x, pad=[0, output_length - x.shape[1]])
+            print('short2', x.shape)
         return x
-
-
-class Decoder(nn.Module):
-    def __init__(self, n_channels: int, padding):
-        super().__init__()
-        assert padding in ['valid', 'same']
-        # self.layers = nn.Sequential(
-        #     nn.Conv1d(16 * n_channels, 16 * n_channels, kernel_size=7, padding=padding),
-        #     nn.ELU(),
-        #     DecoderBlock(16 * n_channels, padding=padding, stride=8),
-        #     DecoderBlock(8 * n_channels, padding=padding, stride=5),
-        #     DecoderBlock(4 * n_channels, padding=padding, stride=4),
-        #     DecoderBlock(2 * n_channels, padding=padding),
-        #     nn.Conv1d(n_channels, 1, kernel_size=7, padding=padding),
-        #     nn.Tanh(),
-        # )
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return self.layers(input)
-
-
-class ResidualVectorQuantizer(nn.Module):
-    weight: torch.Tensor
-    running_mean: torch.Tensor
-    code_count: torch.Tensor
-
-    def __init__(
-        self,
-        num_quantizers: int,
-        num_embeddings: int,
-        embedding_dim: int,
-        decay: float = 0.99,
-        code_replace_threshold: float = 0.0001,
-        eps: float = 1e-10,
-    ) -> None:
-        super().__init__()
-        self.num_quantizers = num_quantizers
-        self.num_embeddings = num_embeddings
-        self.embedding_dim = embedding_dim
-        self.register_buffer("weight", torch.empty(num_quantizers, num_embeddings, embedding_dim))
-        self.register_buffer("running_mean", torch.empty(num_quantizers, num_embeddings, embedding_dim))
-        self.register_buffer("code_count", torch.empty(num_quantizers, num_embeddings))
-        self.decay = decay
-        self.eps = eps
-        self.code_replace_threshold = code_replace_threshold
-        self.reset_parameters()
-
-    def reset_parameters(self) -> None:
-        init.uniform_(self.weight)
-        self.running_mean[:] = self.weight
-        init.ones_(self.code_count)
-
-    @torch.cuda.amp.autocast(enabled=False)
-    def forward(self, input: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, List[torch.Tensor]]:
-        # input: [..., chennel]
-        if self.training:
-            # Enabling bitrate scalability with quantizer dropout
-            n = random.randrange(1, self.num_quantizers)
-        else:
-            n = self.num_quantizers
-        codes = []
-        r = input.type_as(self.running_mean).detach()
-        with torch.no_grad():
-            for i in range(n):
-                w = self.weight[i]
-                # r: [..., num_embeddings]
-                dist = torch.cdist(r, w)
-                k = torch.argmin(dist, axis=-1)
-                codes.append(k)
-                self._update_averages(i, r, k)
-                r = r - F.embedding(k, w)
-        quantized = input - r
-        commitment_loss = torch.mean(torch.square(input - quantized.detach()))
-        self.weight.data[:] = self.running_mean / torch.unsqueeze(self.eps + self.code_count, axis=-1)
-        return quantized, torch.stack(codes, input.ndim - 1), commitment_loss
-
-    def dequantize(self, input: torch.Tensor, n: Optional[int] = None) -> torch.Tensor:
-        # input: [batch_size, length, num_quantizers]
-        if n is None:
-            n = input.shape[-1]
-        assert 0 < n <= self.num_quantizers
-        res = 0
-        with torch.no_grad():
-            for i in range(n):
-                k = input[:, :, i]
-                w = self.weight[i]
-                res += F.embedding(k, w)
-        return res
-
-    def _update_averages(self, i: int, r: torch.Tensor, k: torch.Tensor) -> None:
-        # https://arxiv.org/pdf/1906.00446.pdf
-        # Generating Diverse High-Fidelity Images with VQ-VAE-2
-        # 2.1 Vector Quantized Variational AutoEncode
-
-        # k: [...]
-        one_hot_k = F.one_hot(torch.flatten(k), self.num_embeddings).type_as(self.code_count)
-        code_count_update = torch.mean(one_hot_k, axis=0)
-        self.code_count[i].lerp_(code_count_update, 1 - self.decay)
-
-        # r: [..., embedding_dim]
-        r = r.reshape(-1, self.embedding_dim)
-        running_mean_update = (one_hot_k.T @ r) / r.shape[0]
-        self.running_mean[i].lerp_(running_mean_update, 1 - self.decay)
-
-    @torch.no_grad()
-    @torch.cuda.amp.autocast(enabled=False)
-    def replace_vectors(self) -> int:
-        # https://arxiv.org/pdf/2107.03312.pdf
-        # C. Residual Vector Quantizer:
-
-        # The original paper replaces with an input frame randomly
-        # sampled within the current batch.
-        # Here we replace with random average of running mean instead.
-        num_replaced = torch.sum(self.code_count < self.code_replace_threshold).item()
-        if num_replaced > 0:
-            for i in range(self.num_quantizers):
-                mask = self.code_count[i] < self.code_replace_threshold
-                # mask: [num_quantizers, num_embeddings]
-                w = torch.rand_like(self.code_count[i])
-                w /= torch.sum(w)
-                self.running_mean[i, mask] = w.type_as(self.running_mean) @ self.running_mean[i]
-                self.code_count[i, mask] = w.type_as(self.code_count) @ self.code_count[i]
-
-        return num_replaced
-
-    @torch.no_grad()
-    def calc_entropy(self) -> float:
-        p = self.code_count / (self.eps + torch.sum(self.code_count, axis=-1, keepdim=True))
-        return -torch.sum(torch.log(p) * p).item() / self.num_quantizers
-
-
-class WaveDiscriminator(nn.Module):
-    r"""MelGAN discriminator from https://arxiv.org/pdf/1910.06711.pdf
-    """
-    def __init__(self, resolution: int = 1, n_channels: int = 4) -> None:
-        super().__init__()
-        assert resolution >= 1
-        if resolution == 1:
-            self.avg_pool = nn.Identity()
-        else:
-            self.avg_pool = nn.AvgPool1d(resolution * 2, stride=resolution)
-        self.activation = nn.LeakyReLU(0.2, inplace=True)
-        self.layers = nn.ModuleList([
-            nn.utils.weight_norm(nn.Conv1d(1, n_channels, kernel_size=15, padding=7)),
-            nn.utils.weight_norm(nn.Conv1d(n_channels, 4 * n_channels, kernel_size=41, stride=4, padding=20, groups=4)),
-            nn.utils.weight_norm(nn.Conv1d(4 * n_channels, 16 * n_channels, kernel_size=41, stride=4, padding=20, groups=16)),
-            nn.utils.weight_norm(nn.Conv1d(16 * n_channels, 64 * n_channels, kernel_size=41, stride=4, padding=20, groups=64)),
-            nn.utils.weight_norm(nn.Conv1d(64 * n_channels, 256 * n_channels, kernel_size=41, stride=4, padding=20, groups=256)),
-            nn.utils.weight_norm(nn.Conv1d(256 * n_channels, 256 * n_channels, kernel_size=5, padding=2)),
-            nn.utils.weight_norm(nn.Conv1d(256 * n_channels, 1, kernel_size=3, padding=1)),
-        ])
-
-    def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
-        x = self.avg_pool(x)
-        feats = []
-        for layer in self.layers[:-1]:
-            x = layer(x)
-            feats.append(x)
-            x = self.activation(x)
-        feats.append(self.layers[-1](x))
-        return feats
-
-
-class STFTDiscriminator(nn.Module):
-    r"""STFT-based discriminator from https://arxiv.org/pdf/2107.03312.pdf
-    """
-    def __init__(
-        self, n_fft: int = 1024, hop_length: int = 256,
-        n_channels: int = 32
-    ) -> None:
-        super().__init__()
-        self.n_fft = n_fft
-        self.hop_length = hop_length
-        n = n_fft // 2 + 1
-        for _ in range(6):
-            n = (n - 1) // 2 + 1
-        self.layers = nn.Sequential(
-            nn.Conv2d(1, n_channels, kernel_size=7, padding='same'),
-            nn.LeakyReLU(0.3, inplace=True),
-            ResNet2d(n_channels, 2, stride=(2, 1)),
-            ResNet2d(2 * n_channels, 2, stride=(2, 2)),
-            ResNet2d(4 * n_channels, 1, stride=(2, 1)),
-            ResNet2d(4 * n_channels, 2, stride=(2, 2)),
-            ResNet2d(8 * n_channels, 1, stride=(2, 1)),
-            ResNet2d(8 * n_channels, 2, stride=(2, 2)),
-            nn.Conv2d(16 * n_channels, 1, kernel_size=(n, 1))
-        )
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        assert input.shape[1] == 1
-        # input: [batch, channel, sequence]
-        x = torch.squeeze(input, 1).to(torch.float32)  # torch.stft() doesn't accept float16
-        x = torch.stft(x, self.n_fft, self.hop_length, normalized=True, onesided=True, return_complex=True)
-        x = torch.abs(x)
-        x = torch.unsqueeze(x, dim=1)
-        x = self.layers(x)
-        return x
-
-
-class ReconstructionLoss(nn.Module):
-    """Reconstruction loss from https://arxiv.org/pdf/2107.03312.pdf
-    but uses STFT instead of mel-spectrogram
-    """
-    def __init__(self, eps=1e-5):
-        super().__init__()
-        self.eps = eps
-
-    def forward(self, input, target):
-        loss = 0
-        input = input.to(torch.float32)
-        target = target.to(torch.float32)
-        for i in range(6, 12):
-            s = 2 ** i
-            alpha = (s / 2) ** 0.5
-            # We use STFT instead of 64-bin mel-spectrogram as n_fft=64 is too small
-            # for 64 bins.
-            x = torch.stft(input, n_fft=s, hop_length=s // 4, win_length=s, normalized=True, onesided=True, return_complex=True)
-            x = torch.abs(x)
-            y = torch.stft(target, n_fft=s, hop_length=s // 4, win_length=s, normalized=True, onesided=True, return_complex=True)
-            y = torch.abs(y)
-            if x.shape[-1] > y.shape[-1]:
-                x = x[:, :, :y.shape[-1]]
-            elif x.shape[-1] < y.shape[-1]:
-                y = y[:, :, :x.shape[-1]]
-            loss += torch.mean(torch.abs(x - y))
-            loss += alpha * torch.mean(torch.square(torch.log(x + self.eps) - torch.log(y + self.eps)))
-        return loss / (12 - 6)
-
-
-class ReconstructionLoss2(nn.Module):
-    """Reconstruction loss from https://arxiv.org/pdf/2107.03312.pdf
-    """
-    def __init__(self, sample_rate, eps=1e-5):
-        super().__init__()
-        import torchaudio
-        self.layers = nn.ModuleList()
-        self.alpha = []
-        self.eps = eps
-        for i in range(6, 12):
-            melspec = torchaudio.transforms.MelSpectrogram(
-                sample_rate=sample_rate,
-                n_fft=int(2 ** i),
-                win_length=int(2 ** i),
-                hop_length=int(2 ** i / 4),
-                n_mels=64)
-            self.layers.append(melspec)
-            self.alpha.append((2 ** i / 2) ** 0.5)
-
-    def forward(self, input, target):
-        loss = 0
-        for alpha, melspec in zip(self.alpha, self.layers):
-            x = melspec(input)
-            y = melspec(target)
-            if x.shape[-1] > y.shape[-1]:
-                x = x[:, y.shape[-1]]
-            elif x.shape[-1] < y.shape[-1]:
-                y = y[:, x.shape[-1]]
-            loss += torch.mean(torch.abs(x - y))
-            loss += alpha * torch.mean(torch.square(torch.log(x + self.eps) - torch.log(y + self.eps)))
-        return loss
 
 
 def normalize_control(data):
@@ -530,44 +188,6 @@ def generate_random_control(T: int, n: int, step: int = 20) -> np.ndarray:
     return data
 
 
-def dummy_data_(N=44, T=2000, M=100):
-    import numpy as np
-
-    X = np.random.normal(size=(T, N + 5))
-    w = np.hamming(M)
-    w = w / np.sum(w)
-    Y = X[M - 1:, :] * w[0]
-    for i in range(1, M):
-        # print(X[M-1-i:-i, :].shape)
-        Y = Y + X[M-1-i:-i, :] * w[i]
-    X = Y / np.std(Y)
-    del Y
-
-    X[:, 0] = X[:, 0] > -.1  # voiced
-    X[:, 1] = np.clip(X[:, 1] * 40 + 160 + (44 - N) * ((220 - 160) / (44 - 38)), 80, 300)  # frequency
-    X[:, 2:4] = np.clip(X[:, 2:4] * 0.5 + 0.7, 0.0, 1.0)  # tenseness
-    X[:, 3] = X[:, 2] ** 0.8  # loudness
-    X[:, 4] = np.clip(X[:, 4] * 0.1 + 0.01, 0.01, 0.2)  # velum
-    X[:, 6:-1] = (X[:, 5:-2] + X[:, 6:-1] + X[:, 7:]) / 3.
-    X[:, 6:-1] = (X[:, 5:-2] + X[:, 6:-1] + X[:, 7:]) / 3.
-    X[:, 6:-1] = (X[:, 5:-2] + X[:, 6:-1] + X[:, 7:]) / 3.
-    X[:, 5:] = np.clip(X[:, 5:] + 1.0, 0., 3.)
-
-    return X
-
-
-def unnormalize_control_(inputs):
-    x = torch.transpose(inputs, 1, 2)
-    x = x.numpy().astype(np.float64)
-    x[:, :, 0] = x[:, :, 0] > 0.0
-    x[:, :, 1] = np.clip(x[:, :, 1] * 100. + 150., 90.0, 250.0)
-    x[:, :, 2:4] = np.clip(x[:, :, 2:4] + 0.5, 0.0, 1.0)
-    x[:, :, 4] = np.clip(x[:, :, 4] + 0.5, 0.01, 0.2)
-    x[:, :, 5:] = np.clip(x[:, :, 5:] * 2.0 + 1.0, 0.0, 3.0)
-    x = torch.transpose(torch.from_numpy(x).to(inputs.dtype), 1, 2)
-    return x
-
-
 class PinkTromboneModel(pl.LightningModule):
     def __init__(
         self,
@@ -579,7 +199,7 @@ class PinkTromboneModel(pl.LightningModule):
         padding: str = "valid",
         batch_size: int = 32,
         sample_rate: int = 22_050,
-        segment_length: int = 32270 * 5,
+        segment_length: int = 640 * 256,
         lr: float = 1e-4,
         b1: float = 0.5,
         b2: float = 0.9,
@@ -615,6 +235,20 @@ class PinkTromboneModel(pl.LightningModule):
             self.decoder.parameters(),
             lr=lr, betas=(b1, b2))
         return [optimizer_g, optimizer_d], []
+    
+    def encode(self, audio: torch.Tensor) -> torch.Tensor:
+        '''Predicts PinkTrombone control data from MFCC audio.
+        '''
+        # audio: [batch, channel, sequence]
+        control = self.encoder(audio)
+        control = torch.sigmoid(control)
+        return control
+
+    def decode(self, control: torch.Tensor, audio: torch.Tensor) -> torch.Tensor:
+        '''Estimates How far they are different, output of PinkTrombone outputs
+        for given control and audio.'''
+        estimates = self.decoder(torch.concat([control, audio], axis=1))
+        return estimates
 
     def training_step(self, batch, batch_idx):
         optimizer_g, optimizer_d = self.optimizers()
@@ -622,15 +256,14 @@ class PinkTromboneModel(pl.LightningModule):
         self.running_std[0] = torch.clip(
             self.running_std[0] * self.std_alpha + torch.std(batch) * (1 - self.std_alpha),
             0.01, 1.0)
+        output_length = batch.shape[1]
         targets = self.transform(batch)
         # targets: [batch, channel, sequence]
 
         # train generator
         self.toggle_optimizer(optimizer_g)
-        control = self.encoder(targets)
-        control = torch.sigmoid(control)
-        length = min(targets.shape[2], control.shape[2])
-        estimates = self.decoder(torch.concat([control[:, :, :length], targets[:, :, :length]], axis=1))
+        control = self.encode(targets)
+        estimates = self.decode(control, targets)
         # estimates: [batch, 1, sequence]
         # print(input.shape, output.shape)
 
@@ -648,19 +281,16 @@ class PinkTromboneModel(pl.LightningModule):
         with torch.no_grad():
             control = control.detach()
             unnormalized = unnormalize_control(control)
-            x = self.articulator(unnormalized)
+            x = self.articulator(unnormalized, output_length)
             outputs = self.transform(x * self.running_std[0] / self.running_std[1])
 
-            length = min(outputs.shape[2], targets.shape[2])
-            error = self.criterion(outputs[:, :, :length], targets[:, :, :length])
+            error = self.criterion(outputs, targets)
             error = torch.mean(error, axis=1, keepdim=True)
             self.log("error", torch.mean(error), prog_bar=True)
 
-        length = min(targets.shape[2], control.shape[2])
-        estimates = self.decoder(torch.concat([control[:, :, :length], targets[:, :, :length]], axis=1))
+        estimates = self.decode(control, targets)
 
-        length = min(estimates.shape[2], error.shape[2])
-        d_loss = self.criterion(estimates[:, :, :length], error[:, :, :length])
+        d_loss = self.criterion(estimates, error)
         d_loss = torch.mean(d_loss)
 
         self.log("d_loss", d_loss, prog_bar=True)
@@ -672,7 +302,7 @@ class PinkTromboneModel(pl.LightningModule):
             ])
             unnormalized = torch.from_numpy(x).to(device=targets.device, dtype=targets.dtype)
             control = normalize_control(unnormalized)
-            x = self.articulator(unnormalized)
+            x = self.articulator(unnormalized, output_length)
             self.running_std[1] = torch.clip(
                 self.running_std[1] * self.std_alpha + torch.std(x) * (1 - self.std_alpha),
                 0.01, 1.0)
@@ -680,15 +310,12 @@ class PinkTromboneModel(pl.LightningModule):
             self.log("o_std", self.running_std[1], prog_bar=True)
             outputs = self.transform(x)
 
-            length = min(outputs.shape[2], targets.shape[2])
-            error = self.criterion(outputs[:, :, :length], targets[:, :, :length])
+            error = self.criterion(outputs, targets)
             error = torch.mean(error, axis=1, keepdim=True)
 
-        length = min(targets.shape[2], control.shape[2])
-        estimates = self.decoder(torch.concat([control[:, :, :length], targets[:, :, :length]], axis=1))
+        estimates = self.decode(control, targets)
 
-        length = min(estimates.shape[2], error.shape[2])
-        f_loss = self.criterion(estimates[:, :, :length], error[:, :, :length])
+        f_loss = self.criterion(estimates, error)
         f_loss = torch.mean(f_loss)
 
         self.log("f_loss", f_loss, prog_bar=True)
@@ -749,28 +376,11 @@ class PinkTromboneModel(pl.LightningModule):
         return loader
 
 
-class KMeanCodebookInitCallback(pl.Callback):
-    def on_fit_start(self, trainer, model):
-        # https://arxiv.org/pdf/2107.03312.pdf
-        # C. Residual Vector Quantizer
-        # run the k-means
-        # algorithm on the first training batch and use the learned
-        # centroids as initialization
-        batch = next(iter(model.train_dataloader()))
-        input = batch[:, None, :].to(model.device)
-        with torch.no_grad():
-            x = torch.flatten(model.encoder(input))
-            mean = torch.mean(x, axis=0)
-            std = torch.std(x, axis=0)
-            torch.nn.init.normal_(model.quantizer.weight, mean=mean, std=std)
-        print(f"KMeanCodebookInitCallback {mean} {std}")
-
-
 def train():
     model = PinkTromboneModel(
         batch_size=3,
-        sample_rate=22_500,
-        segment_length=32270 * 5,
+        sample_rate=22_050,
+        segment_length=640 * 256,
         padding='same',
         dataset='librispeech')
     trainer = pl.Trainer(
