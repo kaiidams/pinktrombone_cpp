@@ -234,7 +234,7 @@ class PinkTromboneModel(pl.LightningModule):
             self.decoder.parameters(),
             lr=lr, betas=(b1, b2))
         return [optimizer_g, optimizer_d], []
-    
+
     def encode(self, audio: torch.Tensor) -> torch.Tensor:
         '''Predicts PinkTrombone control data from MFCC audio.
         '''
@@ -304,7 +304,7 @@ class PinkTromboneModel(pl.LightningModule):
             unnormalized = torch.from_numpy(x).to(device=targets.device, dtype=targets.dtype)
             control = normalize_control(unnormalized)
             x = self.articulator(unnormalized, output_length)
-            self.update_running_std(1, batch)
+            self.update_running_std(1, x)
             self.log("t_std", self.running_std[0], prog_bar=True)
             self.log("o_std", self.running_std[1], prog_bar=True)
             outputs = self.transform(x)
