@@ -119,6 +119,7 @@ class Articulator(nn.Module):
         f = np.isinf(x)
         if np.any(f).item():
             x = np.where(f, 0, x)
+        x = np.clip(x, -1.0, 1.0)
         x = torch.from_numpy(x)
         x = torchaudio.functional.resample(x, self.pinktrombone.sample_rate, self.sample_rate)
         if x.shape[1] > output_length:
@@ -242,6 +243,11 @@ class PinkTromboneModel(pl.LightningModule):
         control = torch.sigmoid(control)
         return control
 
+    def update_running_std(self, idx: int, audio: torch.Tensor) -> None:
+        self.running_std[idx] = torch.clip(
+            self.running_std[idx] * self.std_alpha + torch.std(audio) * (1 - self.std_alpha),
+            0.01, 1.0)
+
     def decode(self, control: torch.Tensor, audio: torch.Tensor) -> torch.Tensor:
         '''Estimates How far they are different, output of PinkTrombone outputs
         for given control and audio.'''
@@ -251,9 +257,7 @@ class PinkTromboneModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         optimizer_g, optimizer_d = self.optimizers()
 
-        self.running_std[0] = torch.clip(
-            self.running_std[0] * self.std_alpha + torch.std(batch) * (1 - self.std_alpha),
-            0.01, 1.0)
+        self.update_running_std(0, batch)
         output_length = batch.shape[1]
         targets = self.transform(batch)
         # targets: [batch, channel, sequence]
@@ -300,9 +304,7 @@ class PinkTromboneModel(pl.LightningModule):
             unnormalized = torch.from_numpy(x).to(device=targets.device, dtype=targets.dtype)
             control = normalize_control(unnormalized)
             x = self.articulator(unnormalized, output_length)
-            self.running_std[1] = torch.clip(
-                self.running_std[1] * self.std_alpha + torch.std(x) * (1 - self.std_alpha),
-                0.01, 1.0)
+            self.update_running_std(1, batch)
             self.log("t_std", self.running_std[0], prog_bar=True)
             self.log("o_std", self.running_std[1], prog_bar=True)
             outputs = self.transform(x)
