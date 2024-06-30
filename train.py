@@ -17,86 +17,71 @@ except ImportError:
 import numpy as np
 
 
-class ResNet1d(nn.Module):
-    def __init__(
-        self,
-        n_channels,
-        kernel_size: int = 7,
-        padding: str = 'valid',
-        dilation: int = 1
-    ) -> None:
-        super().__init__()
-        assert padding in ['valid', 'same']
-        self.kernel_size = kernel_size
-        self.padding = padding
-        self.dilation = dilation
-        self._padding_size = (kernel_size // 2) * dilation
-        self.conv0 = nn.Conv1d(
-            n_channels,
-            n_channels,
-            kernel_size=kernel_size,
-            padding=padding,
-            dilation=dilation)
-        self.conv1 = nn.Conv1d(
-            n_channels,
-            n_channels,
-            kernel_size=1)
-
-    def forward(self, input):
-        y = input
-        x = self.conv0(input)
-        x = F.elu(x)
-        x = self.conv1(x)
-        if self.padding == 'valid':
-            y = y[:, :, self._padding_size:-self._padding_size]
-        x += y
-        x = F.elu(x)
-        return x
-
-
-class EncoderBlock(nn.Module):
-    def __init__(
-        self,
-        n_channels: int,
-        padding: str,
-        stride: int
-    ) -> None:
-        super().__init__()
-        assert padding in ['valid', 'same']
-        self.layers = nn.Sequential(
-            ResNet1d(n_channels // 2, padding=padding, dilation=1),
-            ResNet1d(n_channels // 2, padding=padding, dilation=3),
-            ResNet1d(n_channels // 2, padding=padding, dilation=9),
+class ConvBNActivate(nn.Sequential):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1, groups=1):
+        padding = ((kernel_size - 1) // 2) * dilation
+        super().__init__(
             nn.Conv1d(
-                n_channels // 2, n_channels,
-                kernel_size=2 * stride,
-                padding=(2 * stride) // 2 if padding == 'same' else 0,
-                stride=stride),
-            nn.ELU(),
-        )
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return self.layers(input)
+                in_channels, out_channels,
+                kernel_size=kernel_size, stride=stride, padding=padding, dilation=dilation,
+                groups=groups,
+                bias=False),
+            nn.BatchNorm1d(out_channels),
+            nn.ReLU6(inplace=True))
 
 
-class EncoderDecoder(nn.Module):
-    def __init__(self, in_channels, out_channels: int, hidden_dim: int, padding):
+class InvertedResidual(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, expand_ratio=4, use_residual=True):
         super().__init__()
-        assert padding in ['valid', 'same']
-        self.layers = nn.Sequential(
-            nn.Conv1d(in_channels, hidden_dim, kernel_size=1),
-            nn.ReLU(),
-            nn.Conv1d(hidden_dim, hidden_dim, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv1d(hidden_dim, hidden_dim, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv1d(hidden_dim, hidden_dim, kernel_size=5, padding=2),
-            nn.ReLU(),
-            nn.Conv1d(hidden_dim, out_channels, kernel_size=1),
+        hidden_size = in_channels * expand_ratio
+        self.use_residual = use_residual
+        self.conv = nn.Sequential(
+            # pw
+            ConvBNActivate(in_channels, hidden_size, kernel_size=1),
+            # dw
+            ConvBNActivate(hidden_size, hidden_size, kernel_size=kernel_size, stride=stride, groups=hidden_size),
+            # pw-linear
+            nn.Conv1d(hidden_size, out_channels, kernel_size=1, bias=False),
+            nn.BatchNorm1d(out_channels)
         )
 
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return self.layers(input)
+    def forward(self, x):
+        if self.use_residual:
+            return x + self.conv(x)
+        else:
+            return self.conv(x)
+
+
+class ControlEncoder(nn.Module):
+
+    def __init__(self, in_channels, out_channels, hidden_size):
+        super().__init__()
+        self.layers = nn.Sequential(
+            InvertedResidual(in_channels, hidden_size, kernel_size=11, use_residual=False),
+            InvertedResidual(hidden_size, hidden_size, kernel_size=19),
+            InvertedResidual(hidden_size, hidden_size, kernel_size=27),
+            InvertedResidual(hidden_size, hidden_size, kernel_size=35),
+            InvertedResidual(hidden_size, hidden_size, kernel_size=51),
+            InvertedResidual(hidden_size, out_channels, kernel_size=75, use_residual=False))
+
+    def forward(self, embed) -> torch.Tensor:
+        return self.layers(embed)
+
+
+class ErrorEstimator(nn.Module):
+
+    def __init__(self, in_channels, out_channels, hidden_size):
+        super().__init__()
+        self.lstm = nn.LSTM(input_size=in_channels, hidden_size=hidden_size, num_layers=4,
+                            batch_first=True, bidirectional=True)
+        self.proj = nn.Linear(hidden_size * 2, out_channels)
+
+    def forward(self, x):
+        x = torch.transpose(x, 1, 2)
+        x, _ = self.lstm(x)
+        x = self.proj(x)
+        x = torch.transpose(x, 1, 2)
+        return x
 
 
 class Articulator(nn.Module):
@@ -215,8 +200,8 @@ class PinkTromboneModel(pl.LightningModule):
             sample_rate=sample_rate, n_mfcc=n_mfcc, log_mels=True,
             melkwargs=dict(n_fft=512, hop_length=256, n_mels=80, center=False))
         self.articulator = Articulator(num_sections, sample_rate)
-        self.encoder = EncoderDecoder(n_mfcc, self.articulator.input_dim, hidden_dim, padding)
-        self.decoder = EncoderDecoder(self.articulator.input_dim + n_mfcc, 1, hidden_dim, padding)
+        self.encoder = ControlEncoder(n_mfcc, self.articulator.input_dim, hidden_dim)
+        self.decoder = ErrorEstimator(self.articulator.input_dim + n_mfcc, 1, hidden_dim)
         self.criterion = nn.MSELoss(reduction="none")
         self.std_alpha = 0.99
         self.register_buffer('running_std', torch.ones(2) * 0.1)
