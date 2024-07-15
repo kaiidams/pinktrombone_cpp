@@ -261,7 +261,9 @@ class PinkTromboneModel(pl.LightningModule):
         g_loss = torch.mean(estimates)
         self.log("g_loss", g_loss, prog_bar=True)
 
-        self.manual_backward(g_loss)
+        loss = time_loss + shape_loss + g_loss
+
+        self.manual_backward(loss)
         optimizer_g.step()
         optimizer_g.zero_grad()
         self.untoggle_optimizer(optimizer_g)
