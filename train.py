@@ -253,6 +253,11 @@ class PinkTromboneModel(pl.LightningModule):
         estimates = self.decode(control, targets)
         # estimates: [batch, 1, sequence]
 
+        time_loss = torch.mean(torch.square(control[..., :-1, :] - control[..., 1:, :]))
+        shape_loss = torch.mean(torch.square(control[..., 5:-1] - control[..., 6:]))
+        self.log("time_loss", time_loss, prog_bar=True)
+        self.log("shape_loss", shape_loss, prog_bar=True)
+
         g_loss = torch.mean(estimates)
         self.log("g_loss", g_loss, prog_bar=True)
 
@@ -290,8 +295,8 @@ class PinkTromboneModel(pl.LightningModule):
             control = normalize_control(unnormalized)
             x = self.articulator(unnormalized, output_length)
             self.update_running_std(1, x)
-            self.log("t_std", self.running_std[0], prog_bar=True)
-            self.log("o_std", self.running_std[1], prog_bar=True)
+            self.log("t_std", self.running_std[0])
+            self.log("o_std", self.running_std[1])
             outputs = self.transform(x)
 
             error = self.criterion(outputs, targets)
@@ -313,6 +318,9 @@ class PinkTromboneModel(pl.LightningModule):
 
     def train_dataloader(self):
         return self._make_dataloader(True)
+
+    def test_dataloader(self):
+        return self._make_dataloader(False)
 
     def _make_dataloader(self, train: bool):
         import torchaudio
@@ -346,7 +354,8 @@ class PinkTromboneModel(pl.LightningModule):
         if self.hparams.dataset == 'yesno':
             ds = torchaudio.datasets.YESNO("./data", download=True)
         elif self.hparams.dataset == 'librispeech-dev':
-            ds = torchaudio.datasets.LIBRISPEECH("./data", url="dev-clean")
+            url = "dev-clean" if train else "test-clean"
+            ds = torchaudio.datasets.LIBRISPEECH("./data", url=url)
         elif self.hparams.dataset == 'librispeech':
             url = "train-clean-100" if train else "dev-clean"
             ds = torchaudio.datasets.LIBRISPEECH("./data", url=url)
@@ -366,7 +375,7 @@ def train():
         sample_rate=22_050,
         segment_length=640 * 256,
         padding='same',
-        dataset='librispeech')
+        dataset='librispeech-dev')
     trainer = pl.Trainer(
         max_epochs=10000,
         log_every_n_steps=2,
