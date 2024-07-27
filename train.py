@@ -373,19 +373,19 @@ class PinkTromboneModel(pl.LightningModule):
 
 def train():
     model = PinkTromboneModel(
-        batch_size=3,
+        batch_size=32,
         sample_rate=22_050,
         segment_length=640 * 256,
         padding='same',
-        dataset='librispeech-dev')
+        dataset='librispeech')
     trainer = pl.Trainer(
         max_epochs=10000,
         log_every_n_steps=2,
         # precision='16-mixed',
         logger=pl.loggers.CSVLogger("."),
-        # logger=pl.loggers.TensorBoardLogger("lightning_logs", name="soundstream"),
+        logger=pl.loggers.TensorBoardLogger("lightning_logs", name="soundstream"),
         callbacks=[
-            pl.callbacks.ModelCheckpoint(save_last=True, every_n_train_steps=5000),
+            pl.callbacks.ModelCheckpoint(save_last=True, every_n_train_steps=100),
         ],
     )
     trainer.fit(
